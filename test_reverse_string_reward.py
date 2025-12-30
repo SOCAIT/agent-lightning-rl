@@ -1,5 +1,20 @@
 import sys
 import os
+from unittest.mock import MagicMock
+
+# Mock openai before importing reverse_string_agent to avoid ImportError
+# if the package is not installed in the current environment
+sys.modules["openai"] = MagicMock()
+sys.modules["agentlightning"] = MagicMock()
+sys.modules["agentlightning.adapter"] = MagicMock()
+sys.modules["agentlightning.litagent"] = MagicMock()
+sys.modules["agentlightning.reward"] = MagicMock()
+sys.modules["agentlightning.runner"] = MagicMock()
+sys.modules["agentlightning.store"] = MagicMock()
+sys.modules["agentlightning.tracer.agentops"] = MagicMock()
+sys.modules["agentlightning.types"] = MagicMock()
+sys.modules["rich.console"] = MagicMock()
+
 
 # Add the current directory to sys.path to ensure imports work if run from project root
 sys.path.append(os.path.join(os.getcwd(), 'agent-lightning-rl'))
@@ -40,8 +55,7 @@ def test_parse_response_and_reward():
         {
             "name": "Complex with mixed case",
             "input": "Ioannis",
-            "output": "sinn01", # sinnaoI -> sinna01 (reversed: sinnaoI)
-            # Input: Ioannis -> Rev: sinnaoI. Target: sinna01.
+            "output": "s1nna01", # Corrected: sinnaoI -> s1nna01 (i->1, o->0, I->1)
             "expected_reverse_reward": 1.0,
             "expected_replacement_reward": 1.0,
             "expected_total_reward": 1.0
@@ -98,4 +112,3 @@ def test_parse_response_and_reward():
 
 if __name__ == "__main__":
     test_parse_response_and_reward()
-
