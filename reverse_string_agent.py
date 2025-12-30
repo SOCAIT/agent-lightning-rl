@@ -3,7 +3,7 @@
 import openai
 import json
 import re
-from typing import List
+from typing import List, cast
 
 from pydantic import BaseModel, Field
 from rich.console import Console
@@ -153,23 +153,31 @@ def load_tasks() -> Dataset:
 
     # Dataset is a Protocol, so we can return the list directly
     # Lists already implement __len__ and __getitem__ which satisfy the Protocol
-    return tasks
+    return cast(Dataset[ReverseStringTask], tasks)
 
 @rollout
 def reverse_string_rollout(task: ReverseStringTask, prompt: PromptTemplate) -> float:
     client = OpenAI()
     model = "gpt-5-mini"
-    messages = [{'role': 'user', 'content': prompt.format(**task)}]
 
-    client.chat.completions.create(
+    user_message = prompt.format(**task)
+    messages = [{'role': 'user', 'content': user_message}]
+
+    console.print(f"[bold yellow]=== User Message ===[/bold yellow]")
+    console.print(user_message)
+
+    response = client.chat.completions.create(
         model=model,
         messages=messages,
         # tools=tools,
         # tool_choice="auto",
     )
 
+    console.print(f"[bold yellow]=== Assistant Message ===[/bold yellow]")
+    console.print(response.choices[0].message)
+
    
-    final_choice = response_message.content
+    final_choice = response.choices[0].message.content
 
     total_reward, reverse_reward, original_string_reward = parse_response_and_reward(task['input_string'],  final_choice)
 
