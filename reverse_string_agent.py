@@ -175,7 +175,7 @@ def reverse_string_rollout(task: ReverseStringTask, prompt_template: PromptTempl
     messages = [{'role': 'user', 'content': user_message}]
 
     console.print(f"[bold yellow]=== User Message ===[/bold yellow]")
-    console.print(user_message) d
+    console.print(user_message)
 
     response = client.chat.completions.create(
         model=model,
