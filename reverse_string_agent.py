@@ -83,7 +83,7 @@ def build_reverse_string_agent(task, prompt):
 
 def prompt_template_baseline() -> PromptTemplate:
     return PromptTemplate(
-        template="Reverse the string {input_string} and replace 'o' and 'i' with 0 and 1 respectively",
+        template="Reverse the string {input_string} and replace 'o' and 'i' with 0 and 1 respectively. The output should be the reversed  string with the 'o' and 'i' replaced with '0' and '1' respectively.",
         engine="f-string",
     )
 
