@@ -25,6 +25,10 @@ class ReverseStringTask(BaseModel):
     input_string: str = Field(description="The input string to reverse and replace 'o' and 'i' with 0 and 1 respectively")
 
 def parse_response_and_reward(input_string: str, content: str):
+    console.print(f"[bold yellow]=== Input String ===[/bold yellow]")
+    console.print(input_string)
+    console.print(f"[bold yellow]=== Content ===[/bold yellow]")
+    console.print(content)
     # 1) Build the exact target output
     rev = input_string[::-1]
     trans = str.maketrans({'o': '0', 'O': '0', 'i': '1', 'I': '1'})
