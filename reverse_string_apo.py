@@ -88,8 +88,8 @@ def main() -> None:
     try:
         trainer.fit(
             agent=reverse_string_rollout,
-            train_data=train_data,
-            val_data=val_data,
+            train_dataset=train_data,
+            val_dataset=val_data,
         )
     finally:
         # Ensure wandb finishes properly
