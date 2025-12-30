@@ -64,7 +64,7 @@ def parse_response_and_reward(input_string: str, content: str):
 
 def build_reverse_string_agent(task, prompt):
     client = OpenAI()
-    model = "gpt-5"
+    model = "gpt-5-mini"
     messages = [{'role': 'user', 'content': prompt.format(**task)}]
 
     client.chat.completions.create(
@@ -94,7 +94,8 @@ def make_dataset(n=1000, seed=42):
     random.seed(seed)
 
     base_phrases = [
-        "hello", "world", "hello world", "Ioannis", "Solabl", "SyntraFit",
+        "hello", "world",
+         "hello world", "Ioannis", "Solabl", "SyntraFit",
         "offline reinforcement learning", "policy iteration", "imitation learning",
         "optimization", "information", "observation", "vision", "audio", "robotics",
         "Nicosia Cyprus", "OpenAI", "ChatGPT", "I/O bound", "input output",
@@ -150,6 +151,14 @@ def make_dataset(n=1000, seed=42):
     return dataset
 
 DATASET = make_dataset(n=5000, seed=123)
+
+# or a small hand picked dataset
+DATASET = [
+    {"input_string": "hello"},
+    {"input_string": "world"},
+    {"input_string": "hello world"},
+    {"input_string": "Ioannis"},
+]
 
 def load_tasks() -> Dataset:
     """Load tasks as a Dataset. Returns a list which satisfies the Dataset Protocol."""
