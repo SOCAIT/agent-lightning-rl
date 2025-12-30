@@ -15,6 +15,7 @@ from agentlightning.runner import LitAgentRunner
 from agentlightning.store import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Dataset, PromptTemplate
+from openai import OpenAI
 
 import agentlightning as agl
 

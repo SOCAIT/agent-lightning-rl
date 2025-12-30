@@ -194,6 +194,43 @@ class WandbLoggingHook:
             self.epoch_rewards.append(total_reward)
         
         self.step += 1
+    
+    # Agentlightning hook methods - these are called by the Trainer
+    def on_trace_start(self, *args, **kwargs) -> None:
+        """Called when a trace starts. Optional hook method."""
+        pass
+    
+    def on_trace_end(self, *args, **kwargs) -> None:
+        """Called when a trace ends. Optional hook method."""
+        pass
+    
+    def on_rollout_start(self, *args, **kwargs) -> None:
+        """Called when a rollout starts. Optional hook method."""
+        pass
+    
+    def on_rollout_end(self, *args, **kwargs) -> None:
+        """Called when a rollout ends. Optional hook method."""
+        pass
+    
+    def on_span_start(self, *args, **kwargs) -> None:
+        """Called when a span starts. Optional hook method."""
+        pass
+    
+    def on_span_end(self, *args, **kwargs) -> None:
+        """Called when a span ends. Optional hook method."""
+        pass
+    
+    def __getattr__(self, name: str) -> Any:
+        """
+        Handle any other hook methods that agentlightning might call.
+        Returns a no-op function for any undefined hook methods.
+        """
+        if name.startswith('on_'):
+            # Return a no-op function for any 'on_*' hook methods we haven't defined
+            def noop(*args, **kwargs):
+                pass
+            return noop
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 
 # Global hook instance for easy access
