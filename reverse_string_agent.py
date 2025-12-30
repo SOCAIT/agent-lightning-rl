@@ -158,11 +158,19 @@ def load_tasks() -> Dataset:
     return cast(Dataset[ReverseStringTask], tasks)
 
 @agl.rollout
-def reverse_string_rollout(task: ReverseStringTask, prompt: PromptTemplate) -> float:
+def reverse_string_rollout(task: ReverseStringTask, prompt_template: PromptTemplate) -> float:
+    """
+    Rollout function for reverse string task.
+    
+    Expected signature: (task, prompt_template) -> float
+    Returns the total reward as a float.
+    """
+    from wandb_logging import log_reward_components
+    
     client = OpenAI()
-    model = "gpt-5-mini"
+    model = "gpt-4o-mini"
 
-    user_message = prompt.format(**task)
+    user_message = prompt_template.format(**task.dict())
     messages = [{'role': 'user', 'content': user_message}]
 
     console.print(f"[bold yellow]=== User Message ===[/bold yellow]")
@@ -181,6 +189,16 @@ def reverse_string_rollout(task: ReverseStringTask, prompt: PromptTemplate) -> f
    
     final_choice = response.choices[0].message.content
 
-    total_reward, reverse_reward, original_string_reward = parse_response_and_reward(task['input_string'],  final_choice)
+    total_reward, reverse_reward, original_string_reward = parse_response_and_reward(
+        task.input_string, final_choice
+    )
+    
+    # Log reward components to wandb if hook is initialized
+    try:
+        log_reward_components(total_reward, reverse_reward, original_string_reward)
+    except Exception as e:
+        # If wandb logging fails, continue without logging
+        console.print(f"[red]Warning: Failed to log to wandb: {e}[/red]")
 
-    return total_reward, reverse_reward, original_string_reward
+    # Return only the total reward as a float (required by agentlightning)
+    return total_reward
