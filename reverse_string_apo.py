@@ -1,4 +1,4 @@
-from reverse_string_agent import load_tasks, prompt_template_baseline, build_reverse_string_agent
+from reverse_string_agent import load_tasks, prompt_template_baseline, build_reverse_string_agent, reverse_string_rollout
 from reverse_string_agent import ReverseStringTask
 
 import logging
@@ -72,16 +72,6 @@ def main() -> None:
 
     trainer = Trainer(
         algorithm=algo,
-        n_runners=4,
-        strategy="cs",
-        adapter=TraceToMessages(),
-        hooks=[monitoring_hook]
-    )
-
-    # Start training
-    try:
-        trainer.fit(
-            algorithm=algo,
             # increase number of runners to run more rollouts in parallel
             n_runners=8,
             # APO algorithm needs a baseline
@@ -91,6 +81,15 @@ def main() -> None:
             },
             # APO algorithm needs an adapter to process the traces produced by the rollout
             adapter=TraceToMessages(),
+        hooks=[monitoring_hook]
+    )
+
+    # Start training
+    try:
+        trainer.fit(
+            agent=reverse_string_rollout,
+            train_data=train_data,
+            val_data=val_data,
         )
     finally:
         # Ensure wandb finishes properly
