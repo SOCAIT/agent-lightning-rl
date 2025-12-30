@@ -2,8 +2,7 @@ import sys
 import os
 from unittest.mock import MagicMock
 
-# Mock openai before importing reverse_string_agent to avoid ImportError
-# if the package is not installed in the current environment
+# Mock dependencies that might be missing
 sys.modules["openai"] = MagicMock()
 sys.modules["agentlightning"] = MagicMock()
 sys.modules["agentlightning.adapter"] = MagicMock()
@@ -14,6 +13,14 @@ sys.modules["agentlightning.store"] = MagicMock()
 sys.modules["agentlightning.tracer.agentops"] = MagicMock()
 sys.modules["agentlightning.types"] = MagicMock()
 sys.modules["rich.console"] = MagicMock()
+sys.modules["pydantic"] = MagicMock()
+
+# Since we mock pydantic, we need to make sure the imported classes are usable if they are subclassed
+# or if decorators are used.
+class MockBaseModel:
+    pass
+sys.modules["pydantic"].BaseModel = MockBaseModel
+sys.modules["pydantic"].Field = MagicMock(return_value=None)
 
 
 # Add the current directory to sys.path to ensure imports work if run from project root
