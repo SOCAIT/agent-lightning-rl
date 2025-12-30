@@ -53,7 +53,7 @@ def main() -> None:
     # Initialize simple wandb logging
     init_wandb(
         project="reverse-string-apo",
-        name="simple-run",
+        name="run-001",
         config={
             **algo_config,
             "train_size": len(train_data),
