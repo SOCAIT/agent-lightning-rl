@@ -24,11 +24,11 @@ def setup_apo_logger(file_path: str = "apo.log") -> None:
     logging.getLogger("agentlightning.algorithm.apo").addHandler(file_handler)
 
 def load_train_val_data() -> Tuple[Dataset, Dataset]:
-    dataset = load_tasks()
-    train_val_Split = len(dataset) * 0.8 
-    train_data = dataset[:train_val_Split]
-    val_data = dataset[train_val_Split:]
-    return train_data, val_data
+    dataset_full = load_tasks()
+    train_split = len(dataset_full) // 2
+    dataset_train = [dataset_full[i] for i in range(train_split)]
+    dataset_val = [dataset_full[i] for i in range(train_split, len(dataset_full))]
+    return cast(Dataset[ReverseStringTask], dataset_train), cast(Dataset[ReverseStringTask], dataset_val)
 
 def main() -> None:
     setup_apo_logger()
