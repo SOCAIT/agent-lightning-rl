@@ -16,6 +16,8 @@ from agentlightning.store import InMemoryLightningStore
 from agentlightning.tracer.agentops import AgentOpsTracer
 from agentlightning.types import Dataset, PromptTemplate
 
+import agentlightning as agl
+
 console = Console()
 
 class ReverseStringTask(BaseModel):
@@ -155,7 +157,7 @@ def load_tasks() -> Dataset:
     # Lists already implement __len__ and __getitem__ which satisfy the Protocol
     return cast(Dataset[ReverseStringTask], tasks)
 
-@rollout
+@agl.rollout
 def reverse_string_rollout(task: ReverseStringTask, prompt: PromptTemplate) -> float:
     client = OpenAI()
     model = "gpt-5-mini"
