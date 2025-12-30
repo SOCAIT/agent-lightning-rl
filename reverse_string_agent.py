@@ -64,7 +64,7 @@ def parse_response_and_reward(input_string: str, content: str):
 
 def build_reverse_string_agent(task, prompt):
     client = OpenAI()
-    model = "gpt-5-mini"
+    model = "gpt-5"
     messages = [{'role': 'user', 'content': prompt.format(**task)}]
 
     client.chat.completions.create(
