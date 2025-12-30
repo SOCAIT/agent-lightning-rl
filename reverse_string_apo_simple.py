@@ -75,7 +75,7 @@ def main() -> None:
     # No hooks needed - rewards are logged directly from rollout function
     trainer = Trainer(
         algorithm=algo,
-        n_runners=8,
+        n_runners=1,
         initial_resources={
             "prompt": prompt_template_baseline(),
         },
