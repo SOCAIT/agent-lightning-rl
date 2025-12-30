@@ -201,6 +201,9 @@ def reverse_string_rollout(task: ReverseStringTask, prompt_template: PromptTempl
     total_reward, reverse_reward, original_string_reward = parse_response_and_reward(
         input_string, final_choice
     )
+
+    console.print(f"[bold yellow]=== Total Reward ===[/bold yellow]")
+    console.print(total_reward)
     
     # Log reward components to wandb if available
     # Try simple_wandb first (simpler), then fall back to wandb_logging hook
