@@ -27,13 +27,20 @@ def init_wandb(
     """Initialize wandb. Call this once at the start of training."""
     global _wandb_initialized
     if not _wandb_initialized:
-        wandb.init(
-            project=project,
-            name=name,
-            config=config or {},
-            entity=entity,
-        )
-        _wandb_initialized = True
+        try:
+            wandb.init(
+                project=project,
+                name=name,
+                config=config or {},
+                entity=entity,
+            )
+            _wandb_initialized = True
+            print(f"✅ Wandb initialized: project='{project}', run='{name}'")
+            print(f"   View at: {wandb.run.url if wandb.run else 'N/A'}")
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to initialize wandb: {e}")
+            print("   Continuing without wandb logging...")
+            _wandb_initialized = False
 
 
 def log_reward(reward: float, step: Optional[int] = None) -> None:
@@ -41,11 +48,15 @@ def log_reward(reward: float, step: Optional[int] = None) -> None:
     if not _wandb_initialized:
         return  # Silently skip if not initialized
     
-    log_dict = {"reward": reward}
-    if step is not None:
-        wandb.log(log_dict, step=step)
-    else:
-        wandb.log(log_dict)
+    try:
+        log_dict = {"reward": reward}
+        if step is not None:
+            wandb.log(log_dict, step=step)
+        else:
+            wandb.log(log_dict)
+    except Exception as e:
+        # Silently continue if logging fails
+        pass
 
 
 def log_metrics(metrics: Dict[str, float], step: Optional[int] = None) -> None:

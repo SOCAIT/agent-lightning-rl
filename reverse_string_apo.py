@@ -3,6 +3,7 @@ from reverse_string_agent import ReverseStringTask
 
 import logging
 from typing import Tuple, cast, Any, Dict, Optional
+import wandb
 
 from openai import AsyncOpenAI
 
@@ -66,6 +67,18 @@ def main() -> None:
             "n_runners": 8,
         }
     )
+    
+    # Explicitly initialize wandb before training starts
+    # This ensures wandb is ready even if on_train_start isn't called by agentlightning
+    print("🔧 Initializing wandb...")
+    monitoring_hook.on_train_start(None)
+    
+    if monitoring_hook.initialized:
+        print(f"✅ Wandb initialized successfully!")
+        if wandb.run:
+            print(f"   View your run at: {wandb.run.url}")
+    else:
+        print("⚠️  Wandb initialization failed - continuing without wandb logging")
     
     # Set as global hook for easy access from rollout functions
     set_global_hook(monitoring_hook)

@@ -42,14 +42,20 @@ class WandbLoggingHook:
     def on_train_start(self, trainer: Any) -> None:
         """Called when training starts."""
         if not self.initialized:
-            wandb.init(
-                project=self.project_name,
-                entity=self.entity,
-                name=self.run_name,
-                config=self.config,
-            )
-            self.initialized = True
-            logging.info(f"Wandb initialized: project={self.project_name}, run={self.run_name}")
+            try:
+                wandb.init(
+                    project=self.project_name,
+                    entity=self.entity,
+                    name=self.run_name,
+                    config=self.config,
+                )
+                self.initialized = True
+                logging.info(f"✅ Wandb initialized: project={self.project_name}, run={self.run_name}")
+                if wandb.run:
+                    logging.info(f"   View at: {wandb.run.url}")
+            except Exception as e:
+                logging.error(f"⚠️  Failed to initialize wandb: {e}")
+                self.initialized = False
     
     def on_train_end(self, trainer: Any) -> None:
         """Called when training ends."""
