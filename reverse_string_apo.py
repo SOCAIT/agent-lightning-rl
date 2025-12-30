@@ -45,7 +45,7 @@ def main() -> None:
     }
 
     algo = APO[ReverseStringTask](
-        openai_client=openai_client,
+        openai_client,
         val_batch_size=algo_config["val_batch_size"],
         gradient_batch_size=algo_config["gradient_batch_size"],
         beam_width=algo_config["beam_width"],
