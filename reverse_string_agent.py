@@ -171,7 +171,15 @@ def reverse_string_rollout(task: ReverseStringTask, prompt_template: PromptTempl
     client = OpenAI()
     model = "gpt-4o-mini"
 
-    user_message = prompt_template.format(**task)
+    # Handle both dict and object task formats
+    if isinstance(task, dict):
+        task_dict = task
+        input_string = task_dict.get('input_string', '')
+    else:
+        task_dict = task.dict() if hasattr(task, 'dict') else {'input_string': task.input_string}
+        input_string = task.input_string if hasattr(task, 'input_string') else task_dict.get('input_string', '')
+
+    user_message = prompt_template.format(**task_dict)
     messages = [{'role': 'user', 'content': user_message}]
 
     console.print(f"[bold yellow]=== User Message ===[/bold yellow]")
@@ -191,15 +199,21 @@ def reverse_string_rollout(task: ReverseStringTask, prompt_template: PromptTempl
     final_choice = response.choices[0].message.content
 
     total_reward, reverse_reward, original_string_reward = parse_response_and_reward(
-        task.input_string, final_choice
+        input_string, final_choice
     )
     
-    # Log reward components to wandb if hook is initialized
+    # Log reward components to wandb if available
+    # Try simple_wandb first (simpler), then fall back to wandb_logging hook
     try:
-        log_reward_components(total_reward, reverse_reward, original_string_reward)
-    except Exception as e:
-        # If wandb logging fails, continue without logging
-        console.print(f"[red]Warning: Failed to log to wandb: {e}[/red]")
+        from simple_wandb import log_reward as simple_log_reward
+        simple_log_reward(total_reward)
+    except (ImportError, Exception):
+        try:
+            from wandb_logging import log_reward_components
+            log_reward_components(total_reward, reverse_reward, original_string_reward)
+        except Exception as e:
+            # If wandb logging fails, continue without logging
+            pass  # Silently continue
 
     # Return only the total reward as a float (required by agentlightning)
     return total_reward

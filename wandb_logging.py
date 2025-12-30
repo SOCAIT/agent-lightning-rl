@@ -196,38 +196,46 @@ class WandbLoggingHook:
         self.step += 1
     
     # Agentlightning hook methods - these are called by the Trainer
-    def on_trace_start(self, *args, **kwargs) -> None:
+    # Made async to match agentlightning's expectations
+    async def on_trace_start(self, *args, **kwargs) -> None:
         """Called when a trace starts. Optional hook method."""
         pass
     
-    def on_trace_end(self, *args, **kwargs) -> None:
+    async def on_trace_end(self, *args, **kwargs) -> None:
         """Called when a trace ends. Optional hook method."""
         pass
     
-    def on_rollout_start(self, *args, **kwargs) -> None:
+    async def on_rollout_start(self, *args, **kwargs) -> None:
         """Called when a rollout starts. Optional hook method."""
         pass
     
-    def on_rollout_end(self, *args, **kwargs) -> None:
+    async def on_rollout_end(self, *args, **kwargs) -> None:
         """Called when a rollout ends. Optional hook method."""
-        pass
+        # Try to extract reward if available
+        try:
+            # Check if reward is in kwargs or args
+            reward = kwargs.get('reward') or kwargs.get('result')
+            if reward is not None and isinstance(reward, (int, float)):
+                self.log_reward(float(reward), reward_type="rollout")
+        except Exception:
+            pass  # Silently ignore if we can't log
     
-    def on_span_start(self, *args, **kwargs) -> None:
+    async def on_span_start(self, *args, **kwargs) -> None:
         """Called when a span starts. Optional hook method."""
         pass
     
-    def on_span_end(self, *args, **kwargs) -> None:
+    async def on_span_end(self, *args, **kwargs) -> None:
         """Called when a span ends. Optional hook method."""
         pass
     
     def __getattr__(self, name: str) -> Any:
         """
         Handle any other hook methods that agentlightning might call.
-        Returns a no-op function for any undefined hook methods.
+        Returns a no-op async function for any undefined hook methods.
         """
         if name.startswith('on_'):
-            # Return a no-op function for any 'on_*' hook methods we haven't defined
-            def noop(*args, **kwargs):
+            # Return a no-op async function for any 'on_*' hook methods we haven't defined
+            async def noop(*args, **kwargs):
                 pass
             return noop
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
