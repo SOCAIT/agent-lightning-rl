@@ -171,11 +171,11 @@ def reverse_string_rollout(task: ReverseStringTask, prompt_template: PromptTempl
     client = OpenAI()
     model = "gpt-4o-mini"
 
-    user_message = prompt_template.format(**task.dict())
+    user_message = prompt_template.format(**task)
     messages = [{'role': 'user', 'content': user_message}]
 
     console.print(f"[bold yellow]=== User Message ===[/bold yellow]")
-    console.print(user_message)
+    console.print(user_message) d
 
     response = client.chat.completions.create(
         model=model,
