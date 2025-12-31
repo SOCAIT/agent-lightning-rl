@@ -129,6 +129,7 @@ def vllm_server(
 
 
 
+
 async def sft_one_iter(
     *,
     iteration: int,
@@ -166,27 +167,25 @@ async def sft_one_iter(
     if not os.path.exists(model_path):
         raise ValueError(f"Model path {model_path} does not exist.")
 
-    # 2. Run the vLLM server
-    with vllm_server(model_path, vllm_port) as vllm_url:
-        # update the model list of the llm proxy
+    # First launch the vLLM server
+    with vllm_server(model_path, vllm_port) as server_address:
+        # Update the model list of the LLM proxy and start it
         model_list: List[ModelConfig] = [
             {
-                "model_name": MODEL_NAME,
+                "model_name": "Qwen3-4B-Instruct",
                 "litellm_params": {
                     "model": f"hosted_vllm/{model_path}",
-                    "api_base": vllm_url,
-                }
-
+                    "api_base": server_address,
+                },
             }
         ]
-
         console.print(f"[bold red][Algo][/bold red] Updating model list and restarting LLM proxy: {model_list}")
         llm_proxy.update_model_list(model_list)
         # Restart the LLM proxy after backend model list update
         # If LLM proxy has never been started, it will be started
         await llm_proxy.restart()
 
-        # put the llm proxy in the store as an adress
+        # Put the LLM proxy address into the store as an address
         resources_update = await store.add_resources(
             {
                 "main_llm": llm_proxy.as_resource(),
@@ -196,36 +195,37 @@ async def sft_one_iter(
         # Create tasks for runners to run, associating them with the proxy address
         rollouts: List[Rollout] = []
         for data in train_dataset:
-           rollouts.append(
-               await store.enqueue_rollout(
-                  input=data,
-                  mode="train",
-                  resources_id=resources_update.id,
-               )
-           )
-
-        console.print(f"[bold red][Algo][/bold red] Enqueued {len(rollouts)} rollouts")
-        
-        # Wait for tasks to complete
-        comeleted_rollouts:[Rollout] = []
-
-        while True:
-            complete_rollouts = await store.wait_for_rollouts(
-                rollout_ids=[rollout.rollout_id for rollout in rollouts],
+            rollouts.append(
+                await store.enqueue_rollout(
+                    input=data,
+                    mode="train",
+                    resources_id=resources_update.resources_id,
+                )
             )
 
-            if len(complete_rollouts) == len(rollouts):
-                console.print(f"[bold red][Algo][/bold red] All {len(rollouts)} rollouts completed")
-                break
-            console.print(f"[bold red][Algo][/bold red] Received {len(complete_rollouts)} rollouts, waitinf for more")
+        console.print(f"[bold red][Algo][/bold red] Enqueued {len(rollouts)} rollouts")
 
+        # Wait for the tasks to complete
+        completed_rollouts: List[Rollout] = []
+
+        while True:
+            completed_rollouts = await store.wait_for_rollouts(
+                rollout_ids=[rollout.rollout_id for rollout in rollouts],
+                timeout=0.0,  # Timeout must be a very small value to avoid blocking the store server
+            )
+            if len(completed_rollouts) >= len(rollouts):
+                console.print(f"[bold red][Algo][/bold red] Received all {len(rollouts)} rollouts")
+                break
+            console.print(
+                f"[bold red][Algo][/bold red] Received {len(completed_rollouts)} rollouts, waiting for more..."
+            )
             await asyncio.sleep(5.0)
 
-    # LLM server can be shutdown now as we perfrom the training
+    # LLM server can be shutdown now as we perform the training
 
     # 2. Prepare the dataset for SFT
     all_triplets: List[HuggingFaceDatasetRecord] = []
-    for rollout in complete_rollouts:
+    for rollout in completed_rollouts:
         spans = await store.query_spans(rollout.rollout_id, "latest")
         # Use data_adapter to adapt the spans to triplets. Triplets are a list of Pydantic models:
         # Triplet(
@@ -238,17 +238,17 @@ async def sft_one_iter(
         #     reward=0.5,
         # )
         triplets = data_adapter.adapt(spans)
-        
+
+        # Logging the prompt and response lengths and rewards for debugging
         prompt_lengths = [len(t.prompt["token_ids"]) if t.prompt["token_ids"] else 0 for t in triplets]
         response_lengths = [len(t.response["token_ids"]) if t.response["token_ids"] else 0 for t in triplets]
-        
         console.print(
             f"[bold red][Algo][/bold red] Rollout {rollout.rollout_id} has {len(triplets)} triplets. "
             f"Prompt lengths: {prompt_lengths}. Response lengths: {response_lengths}. "
             f"Rewards are: {[t.reward for t in triplets]}"
         )
 
-        # Converts triplets to a HuggingFAce Dataset
+        # Converts the triplets to a HuggingFace Dataset
         # Reverse the triplets so that the later rewards can propagate to the earlier triplets
         recent_reward: Optional[float] = None
         for triplet in reversed(triplets):
@@ -284,6 +284,7 @@ async def sft_one_iter(
                 console.print(
                     f"[bold red][Algo][/bold red] Skip triplet because it has no prompt or response: {triplet}"
                 )
+
     # IMPORTANT: Shuffle the triplets and rank them by reward
     if len(all_triplets) == 0:
         raise ValueError("No triplets to train on.")
@@ -324,7 +325,6 @@ async def sft_one_iter(
     console.print(f"[bold red][Algo][/bold red] Saved model to {next_model_path}")
 
     return next_model_path
-
 
 async def sft_algorithm(*, store: LightningStore) -> None:
     """Run the complete SFT algorithm with multiple iterations.
