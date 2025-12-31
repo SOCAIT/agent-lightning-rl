@@ -267,8 +267,8 @@ async def sft_one_iter(
         )
 
         # Create tasks for runners to run, associating them with the proxy address
-        rolliuts: List[Rollout] = []
-        fro data in train_dataset:
+        rollouts: List[Rollout] = []
+        for data in train_dataset:
            rollouts.append(
                await store.enqueue_rollout(
                   input=data,
