@@ -272,7 +272,7 @@ async def sft_one_iter(
            rollouts.append(
                await store.enqueue_rollout(
                   input=data,
-                  mode-"train",
+                  mode="train",
                   resources_id=resources_update.id,
                )
            )
