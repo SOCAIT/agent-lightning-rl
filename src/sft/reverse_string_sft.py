@@ -312,7 +312,7 @@ async def sft_one_iter(
         # )
         triplets = data_adapter.adapt(spans)
         
-        prompt_lengths = [len(t.prompt["token_ids"]) if t.prompt["token_ids"]  0 for t in triplets]
+        prompt_lengths = [len(t.prompt["token_ids"]) if t.prompt["token_ids"] else 0 for t in triplets]
         response_lengths = [len(t.response["token_ids"]) if t.response["token_ids"] else 0 for t in triplets]
         
         console.print(
