@@ -10,6 +10,7 @@ from src.env.nutrition.verifiers_utils import get_payload
 from src.nutrition.data_utils import Scenario
 # Pinecone
 from pinecone import Pinecone
+import os
 
 # ============================================================================
 # PINECONE SETUP
