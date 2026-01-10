@@ -62,6 +62,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "path": "Qwen/Qwen2.5-1.5B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
+            "model_kwargs": {
+                "attn_implementation": "eager"
+            },
         },
     },
     "trainer": {
