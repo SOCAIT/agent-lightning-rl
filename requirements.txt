@@ -2,3 +2,5 @@ agentlightning
 agentlightning[apo]
 agentlightning[verl]
 wandb
+litellm
+tenacity

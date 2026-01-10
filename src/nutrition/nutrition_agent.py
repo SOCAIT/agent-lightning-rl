@@ -5,6 +5,7 @@ import os
 import sys
 import json
 import time
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast, Annotated, Sequence, TypedDict
 
@@ -29,8 +30,8 @@ import agentlightning as agl
 # Import tools and rewards
 from src.nutrition.nutrition_tools import NutritionTools
 import src.nutrition.nutrition_tools as nutrition_tools_module
-from src.env.nutrition.verifiable_rewards.nutrition_rewards import nutrition_reward
-from src.env.nutrition.provenance_reward import provenance_reward_names_only_totals_only
+from src.env.nutrition.verifiable_rewards.nutrition_rewards import combined_reward_v2
+from src.nutrition.data_utils import Scenario
 
 agl.setup_logging(apply_to=[__name__])
 logger = logging.getLogger(__name__)
@@ -231,7 +232,7 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
                     logger.warning(f"[Rollout {rollout.rollout_id}] Failed to parse tool output")
                     continue
         
-        if not final_payload:
+        if final_payload is None:
             logger.warning(f"[Rollout {rollout.rollout_id}] No final answer tool call found.")
             return 0.0
 
@@ -243,38 +244,28 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         daily_fat_target = context.get("daily_fat_target")
         banned_keywords = context.get("banned_keywords", [])
         
-        # Calculate Nutrition Reward
-        r_nutrition, diag_nutrition = nutrition_reward(
-            payload=final_payload,
+        # Create Scenario Object
+        scenario_data = Scenario(
+            id=str(task.get("id", "unknown")),
+            question=question,
+            split=task.get("split", "test"),
             daily_cal_target=daily_cal_target,
             daily_prot_target=daily_prot_target,
             daily_carb_target=daily_carb_target,
             daily_fat_target=daily_fat_target,
-            banned_keywords=banned_keywords,
-            traj=None, # We can pass traj if we want to log it, but nutrition_reward doesn't strictly need it for schema/macros
-            step=rollout.step if hasattr(rollout, "step") else None
+            banned_keywords=banned_keywords
         )
-        
-        # Calculate Provenance Reward (Optional but good)
-        # It requires the traj object we populated via tools
-        r_provenance, diag_provenance = provenance_reward_names_only_totals_only(
-            payload=final_payload,
-            traj=traj,
-            tool_name="recipe_semantic_search"
-        )
-        
-        # Combine rewards? Or just use nutrition_reward?
-        # Let's average them or use nutrition_reward as primary.
-        # The prompt implies `provenance_reward` is important for "cheating" prevention.
-        # Let's say: Total Reward = 0.8 * Nutrition + 0.2 * Provenance (if nutrition is good)
-        # Or just return Nutrition reward for now as it covers macros/schema.
-        # provenance_reward is about consistency with tools.
-        
-        # For simplicity, let's use a weighted sum
-        final_reward = 0.7 * r_nutrition + 0.3 * r_provenance
-        
-        logger.info(f"[Rollout {rollout.rollout_id}] Nutrition R: {r_nutrition:.2f}, Provenance R: {r_provenance:.2f} -> Final: {final_reward:.2f}")
-        logger.info(f"[Rollout {rollout.rollout_id}] Diag: {diag_nutrition}")
+
+        # Calculate Combined Reward
+        try:
+             final_reward, info = asyncio.run(combined_reward_v2(final_payload, scenario_data, traj))
+        except Exception as e:
+            logger.exception(f"[Rollout {rollout.rollout_id}] Error calculating reward: {e}")
+            final_reward = 0.0
+            info = {"error": str(e)}
+
+        logger.info(f"[Rollout {rollout.rollout_id}] Final Reward: {final_reward:.2f}")
+        logger.info(f"[Rollout {rollout.rollout_id}] Info: {info}")
         
         end_time = time.time()
         logger.info(f"[Rollout {rollout.rollout_id}] Time: {end_time - start_time:.2f}s")

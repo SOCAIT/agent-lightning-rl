@@ -1,265 +1,234 @@
+import json
 import math
-import re
-from src.env.verifiable_rewards.schema_rewards import verify_meal_plan_schema, verify_workout_schema, verify_nutrition_schema
-from src.env.verifiable_rewards.banned_food_reward import verify_no_banned
+from typing import Tuple, Dict, Any, List, Optional, Union
+from pydantic import BaseModel
+from tenacity import retry, stop_after_attempt
+from litellm import acompletion
+from src.nutrition.data_utils import Scenario
 
-import math
+VARIETY_JUDGE_PROMPT = """
+You are a nutrition expert judging the variety of a meal plan.
+Analyze the provided meal plan for:
+1. Diversity of ingredients (proteins, vegetables, carb sources).
+2. Repetition of meals (is it just the same meal repeated?).
+3. Culinary interest.
 
-# ---------- smooth per-macro scoring ----------
-def _smooth_macro_score(rel_err: float, cap: float = 0.15) -> float:
-    """
-    Dense, smooth score in (0,1]. rel_err is |y - t| / max(1, |t|).
-    cap is the 'scale' where score ~ 1/(1+3) ~= 0.25 if rel_err == cap.
-    Smaller cap => stricter. Use curriculum to anneal cap down over training.
-    """
-    x = max(0.0, rel_err) / max(1e-9, cap)
-    return 1.0 / (1.0 + 3.0 * (x * x))
+Score the variety from 0.0 to 1.0.
+- 0.0: Extremely repetitive (e.g. same meal 3 times).
+- 0.5: Acceptable but basic.
+- 1.0: Excellent variety and balance.
 
-def _macro_caps_and_weights(step: int | None):
-    """
-    Anneal strictness and emphasize protein slightly.
-    Returns (caps, weights) as dicts keyed by 'calories','proteins','carbs','fats'.
-    """
-    if step is None or step < 100:
-        caps = {"calories": 0.20, "proteins": 0.18, "carbs": 0.25, "fats": 0.25}
-        w    = {"calories": 0.30, "proteins": 0.40, "carbs": 0.20, "fats": 0.10}
-    elif step < 300:
-        caps = {"calories": 0.15, "proteins": 0.12, "carbs": 0.20, "fats": 0.20}
-        w    = {"calories": 0.30, "proteins": 0.40, "carbs": 0.20, "fats": 0.10}
-    else:
-        caps = {"calories": 0.10, "proteins": 0.08, "carbs": 0.15, "fats": 0.15}
-        w    = {"calories": 0.30, "proteins": 0.40, "carbs": 0.20, "fats": 0.10}
-    # normalize weights
-    s = sum(w.values())
-    for k in w: w[k] = w[k] / s
-    return caps, w
+Provide a short reason.
+"""
 
-def verify_daily_meal_plan_macros_v2(
-    plan_json: dict,
-    daily_cal_target: float,
-    daily_prot_target: float,
-    daily_carb_target: float | None = None,
-    daily_fat_target: float | None = None,
-    step: int | None = None,
-):
-    """
-    Dense macro scorer using all available targets (cal/proteins and optionally carbs/fats).
-    Returns (score in [0,1], diag).
-    """
-    meals = plan_json.get("meals", [])
-    totals = {
-        "calories": sum(float(m.get("calories", 0)  or 0) for m in meals),
-        "proteins": sum(float(m.get("proteins", 0)  or 0) for m in meals),
-        "carbs":    sum(float(m.get("carbs", 0)     or 0) for m in meals),
-        "fats":     sum(float(m.get("fats", 0)      or 0) for m in meals),
-    }
+# Utils
+def _extract_first_json_segment(s: str) -> str | None:
+    start_candidates = [s.find('{'), s.find('[')]
+    start_candidates = [i for i in start_candidates if i != -1]
+    if not start_candidates: return None
+    start = min(start_candidates)
+    depth_obj, depth_arr, in_str, esc = 0, 0, False, False
+    opener = s[start]
+    want_obj, want_arr = opener == '{', opener == '['
+    for i in range(start, len(s)):
+        ch = s[i]
+        if in_str:
+            if esc: esc = False
+            elif ch == '\\': esc = True
+            elif ch == '"': in_str = False
+        else:
+            if ch == '"': in_str = True
+            elif ch == '{': depth_obj += 1
+            elif ch == '}': depth_obj -= 1
+            elif ch == '[': depth_arr += 1
+            elif ch == ']': depth_arr -= 1
+            if want_obj and depth_obj == 0 and depth_arr == 0 and i >= start: return s[start:i+1]
+            if want_arr and depth_arr == 0 and depth_obj == 0 and i >= start: return s[start:i+1]
+    return None
+
+def get_payload(obj):
+    if hasattr(obj, "answer"): obj = obj.answer
+    if isinstance(obj, str):
+        try: obj = json.loads(obj)
+        except:
+             seg = _extract_first_json_segment(obj)
+             if seg: 
+                 try: obj = json.loads(seg)
+                 except: pass
+    if isinstance(obj, dict): return obj
+    if isinstance(obj, list): return {"_root": obj}
+    return {}
+
+# 1. Schema Check
+def verify_schema_v2(payload: dict) -> Tuple[float, Dict]:
+    if not isinstance(payload, dict):
+        return 0.0, {"error": "payload_not_dict"}
+    
+    if "meals" not in payload:
+        return 0.0, {"error": "missing_meals_key"}
+        
+    meals = payload["meals"]
+    if not isinstance(meals, list):
+        return 0.0, {"error": "meals_not_list"}
+        
+    if len(meals) == 0:
+        return 0.0, {"error": "empty_meals_list"}
+        
+    required_keys = ["name", "quantity", "calories", "proteins", "carbs", "fats"]
+    for i, meal in enumerate(meals):
+        if not isinstance(meal, dict):
+            return 0.0, {"error": f"meal_{i}_not_dict"}
+        for k in required_keys:
+            if k not in meal:
+                return 0.0, {"error": f"meal_{i}_missing_{k}"}
+                
+    return 1.0, {"status": "valid"}
+
+# 2. Strict Macro Check (+/- 5%)
+def verify_macros_strict(payload: dict, targets: Dict[str, float], tolerance=0.05) -> Tuple[float, Dict]:
+    meals = payload.get("meals", [])
+    if not meals: return 0.0, {"error": "no_meals"}
+    
+    total_cals = sum(float(m.get("calories", 0)) for m in meals)
+    total_prot = sum(float(m.get("proteins", 0)) for m in meals)
+    total_carb = sum(float(m.get("carbs", 0)) for m in meals)
+    total_fat = sum(float(m.get("fats", 0)) for m in meals)
+    
+    errors = {}
+    passed = True
+    
+    # Check Calories
+    if targets.get("calories"):
+        target = float(targets["calories"])
+        if target > 0:
+            err = abs(total_cals - target) / target
+            errors["calories"] = err
+            if err > tolerance: passed = False
+            
+    # Check Protein
+    if targets.get("protein"):
+        target = float(targets["protein"])
+        if target > 0:
+            err = abs(total_prot - target) / target
+            errors["protein"] = err
+            if err > tolerance: passed = False
+            
+    # Optional checks if targets exist
+    if targets.get("carbs"):
+        target = float(targets["carbs"])
+        if target > 0:
+            err = abs(total_carb - target) / target
+            errors["carbs"] = err
+            if err > tolerance and tolerance > 0.0: passed = False
+            
+    if targets.get("fat"):
+        target = float(targets["fat"])
+        if target > 0:
+            err = abs(total_fat - target) / target
+            errors["fat"] = err
+            if err > tolerance and tolerance > 0.0: passed = False
+            
+    score = 1.0 if passed else 0.0
+    return score, {"totals": {"cal": total_cals, "prot": total_prot}, "errors": errors, "passed": passed}
+
+# 3. Variety Heuristic
+def verify_variety_heuristic(payload: dict) -> Tuple[float, Dict]:
+    meals = payload.get("meals", [])
+    if not meals: return 0.0, {"reason": "no_meals"}
+    
+    # Check number of meals (aim for 3+)
+    num_meals = len(meals)
+    if num_meals < 3:
+        return 0.0, {"reason": f"too_few_meals_{num_meals}"}
+        
+    # Check unique meal names (aim for 3+)
+    names = [m.get("name", "").lower().strip() for m in meals]
+    unique_names = set(names)
+    if len(unique_names) < 3:
+        return 0.0, {"reason": f"low_variety_{len(unique_names)}_unique"}
+        
+    return 1.0, {"unique_meals": len(unique_names), "total_meals": num_meals}
+
+# 4. LLM Variety Judge
+class VarietyJudgeResponse(BaseModel):
+    score: float
+    reason: str
+
+@retry(stop=stop_after_attempt(2))
+async def llm_variety_judge(scenario_text, plan_json):
+    messages = [
+        {"role": "system", "content": VARIETY_JUDGE_PROMPT},
+        {"role": "user", "content": f"Context: {scenario_text}\n\nPlan: {json.dumps(plan_json)}"}
+    ]
+    try:
+        response = await acompletion(
+            model="openai/gpt-4o-mini", # Or use the local model if needed
+            messages=messages,
+            response_format=VarietyJudgeResponse
+        )
+        content = response.choices[0].message.content
+        # If response_format handled it, we get a json string
+        return json.loads(content)
+    except Exception as e:
+        print(f"Judge Error: {e}")
+        return {"score": 0.5, "reason": "judge_error"}
+
+# Main Reward Wrapper
+async def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
+    # Ensure payload is a dict
+    payload = get_payload(payload)
+    
+    # 1. Schema
+    r_schema, info_schema = verify_schema_v2(payload)
+    if r_schema < 1.0:
+        return 0.0, {"failure": "schema", "info": info_schema}
+        
+    # 2. Macros
     targets = {
-        "calories": float(daily_cal_target),
-        "proteins": float(daily_prot_target),
-        "carbs":    float(daily_carb_target) if daily_carb_target is not None else None,
-        "fats":     float(daily_fat_target)  if daily_fat_target  is not None else None,
+        "calories": scenario_data.daily_cal_target,
+        "protein": scenario_data.daily_prot_target,
+        "carbs": scenario_data.daily_carb_target,
+        "fat": scenario_data.daily_fat_target
     }
+    r_macro, info_macro = verify_macros_strict(payload, targets, tolerance=0.05)
+    
+    # 3. Variety Heuristic
+    r_variety_h, info_variety = verify_variety_heuristic(payload)
+    
+    # 4. LLM Judge (Only if basic checks pass to save cost/time)
+    r_variety_llm = 0.0
+    if r_macro > 0.0 and r_variety_h > 0.0:
+         judge_res = await llm_variety_judge(scenario_data.question, payload)
+         r_variety_llm = judge_res.get("score", 0.0)
+         info_variety["llm_reason"] = judge_res.get("reason")
+    else:
+        # Penalize if basic variety check fails
+        pass
 
-    caps, weights = _macro_caps_and_weights(step)
-
-    per_macro = {}
-    used_keys = []
-    for k in ("calories", "proteins", "carbs", "fats"):
-        if targets[k] is None:
-            continue
-        rel = abs(totals[k] - targets[k]) / max(1.0, abs(targets[k]))
-        s   = _smooth_macro_score(rel, cap=caps[k])
-        per_macro[k] = {"rel_err": rel, "cap": caps[k], "score": s, "weight": weights[k]}
-        used_keys.append(k)
-
-    if not used_keys:  # safeguard
-        return 0.0, {"error": "no macro targets provided"}
-
-    score = sum(per_macro[k]["score"] * per_macro[k]["weight"] for k in used_keys)
-
-    diag = {
-        "totals": totals,
-        "targets": {k: targets[k] for k in used_keys},
-        "per_macro": {k: per_macro[k] for k in used_keys},
-        "used_keys": used_keys,
+    # Weighted Sum
+    # Macro accuracy is paramount -> 0.4
+    # Schema is a gate (already handled, if 0 return 0)
+    # Variety Heuristic -> 0.3
+    # LLM Variety -> 0.3
+    
+    # If macros fail, score is low
+    if r_macro == 0.0:
+        final_score = 0.1 # participation award
+    else:
+        # Base score from macros
+        final_score = 0.4 
+        # Add variety
+        final_score += (0.3 * r_variety_h)
+        # Add LLM score
+        final_score += (0.3 * r_variety_llm)
+        
+    info = {
+        "r_schema": r_schema,
+        "r_macro": r_macro,
+        "r_variety_h": r_variety_h,
+        "r_variety_llm": r_variety_llm,
+        "macro_info": info_macro,
+        "variety_info": info_variety
     }
-    return max(0.0, min(1.0, score)), diag
-
-def _banded_score(err, tol=0.03, hard=0.10):
-    """
-    err: relative error (abs(actual-target)/target).
-    1.0 inside tol; cosine-decay to 0 by 'hard'.
-    """
-    if err <= tol: return 1.0
-    if err >= hard: return 0.0
-    x = (err - tol) / (hard - tol)
-    return 0.5 * (1 + math.cos(math.pi * x))
-
-def verify_daily_meal_plan_macros(plan_json, daily_cal_target, daily_prot_target,
-                                  tol_cal=0.03, hard_cal=0.10,
-                                  tol_pro=0.02, hard_pro=0.08):
-    """
-    Returns (score in [0,1], diagnostics).
-    Score is a weighted combo emphasizing protein.
-    """
-    meals = plan_json.get("meals", [])
-    tot_c = sum(m.get("calories", 0) for m in meals)
-    tot_p = sum(m.get("proteins", 0) for m in meals)
-
-    rel_c = abs(tot_c - daily_cal_target) / max(daily_cal_target, 1)
-    rel_p = abs(tot_p - daily_prot_target) / max(daily_prot_target, 1)
-
-    s_cal = _banded_score(rel_c, tol=tol_cal, hard=hard_cal)
-    s_pro = _banded_score(rel_p, tol=tol_pro, hard=hard_pro)
-
-    # Emphasize protein, then calories
-    score = 0.6 * s_pro + 0.4 * s_cal
-
-    diag = {
-        "totals": {"calories": tot_c, "proteins": tot_p},
-        "targets": {"calories": daily_cal_target, "proteins": daily_prot_target},
-        "rel_errors": {"cal": rel_c, "pro": rel_p},
-        "component_scores": {"cal": s_cal, "pro": s_pro},
-        "within_5pct": {"cal": rel_c <= 0.05, "pro": rel_p <= 0.05},
-    }
-    return score, diag
-
-def verify_macros(plan_json, daily_cal_target, daily_prot_target,
-                  tol_cal=0.03, hard_cal=0.10, tol_pro=0.02, hard_pro=0.08): #, tol_carbs=0.05, hard_carbs=0.10, tol_fats=0.05, hard_fats=0.10):
-    """
-    plan_json["dailyMealPlans"] is a list of days.
-    Returns (avg_score, per_day_diags).
-    """
-    days = plan_json.get("dailyMealPlans", [])
-    if not isinstance(days, list) or not days:
-        return 0.0, {"error": "dailyMealPlans missing/empty"}
-
-    per_day = []
-    for day in days:
-        meals = day.get("meals", [])
-        tot_c = sum(m.get("calories", 0) for m in meals)
-        tot_p = sum(m.get("proteins", 0) for m in meals)
-        rel_c = abs(tot_c - daily_cal_target) / max(daily_cal_target, 1)
-        rel_p = abs(tot_p - daily_prot_target) / max(daily_prot_target, 1)
-        s_cal = _banded_score(rel_c, tol=tol_cal, hard=hard_cal)
-        s_pro = _banded_score(rel_p, tol=tol_pro, hard=hard_pro)
-        score = 0.6*s_pro + 0.4*s_cal
-        per_day.append({"day": day.get("day"), "score": score, "tot_c": tot_c, "tot_p": tot_p, "rel_c": rel_c, "rel_p": rel_p})
-    avg = sum(d["score"] for d in per_day) / len(per_day)
-    return avg, {"per_day": per_day}
-
-
-# def verify_no_banned(plan_json, banned_keywords):
-#     """
-#     Ensure no banned keywords appear in meal name or description.
-#     Returns list of (day, meal_name, offending_keyword) if violations.
-#     """
-#     violations = []
-#     R_banned = 1.0
-#     for day in plan_json.get("dailyMealPlans", []):
-#         d = day.get("day")
-#         for m in day.get("meals", []):
-#             text = (m.get("name", "") + " " + m.get("description", "")).lower()
-#             for kw in banned_keywords:
-#                 if re.search(rf"\b{re.escape(kw.lower())}\b", text):
-#                     violations.append((d, m.get("name", ""), kw))
-#                     R_banned = 0.0
-#     return R_banned, violations
-
-
-# --- Combined verifier APIs ---
-
-def verify_nutrition_plan(plan_json, daily_cal_target, daily_prot_target, banned_keywords=None):
-    """
-    Returns (score, diagnostic_info)
-    score is in [0,1]. 1 means fully valid.
-    """
-    ok, msg = verify_nutrition_schema(plan_json)
-    if not ok:
-        return -1.0, {"schema_error": msg}
-
-    macro_errs = verify_macros(plan_json, daily_cal_target, daily_prot_target)
-    if macro_errs:
-        return -1.0, {"macro_errors": macro_errs}
-
-    if banned_keywords:
-        banned_viol = verify_no_banned(plan_json, banned_keywords)
-        if banned_viol:
-            return -1.0, {"banned_violations": banned_viol}
-
-    return 1.0, {"ok": True}
-
-
-
-def nutrition_reward(
-    payload,
-    daily_cal_target,
-    daily_prot_target,
-    banned_keywords,
-    traj=None,
-    daily_carb_target=None,
-    daily_fat_target=None,
-    step: int | None = None,
-):
-    # schema check
-    R_schema, diag_schema = verify_meal_plan_schema(payload)
-
-    # DENSE macros (uses carbs/fats if provided; anneals by step)
-    R_macro,  diag_macro  = verify_daily_meal_plan_macros_v2(
-        payload,
-        daily_cal_target=daily_cal_target,
-        daily_prot_target=daily_prot_target,
-        daily_carb_target=daily_carb_target,
-        daily_fat_target=daily_fat_target,
-        step=step,
-    )
-
-    # banned check (same as yours)
-    if banned_keywords:
-        R_banned, diag_banned = verify_no_banned(payload, banned_keywords)
-    else:
-        R_banned, diag_banned = 1.0, {"ok": True}
-
-    # weights: lean harder on macros; keep schema meaningful
-    if banned_keywords:
-        reward_weights = {"R_macro": 0.75, "R_schema": 0.20, "R_banned": 0.05}
-    else:
-        reward_weights = {"R_macro": 0.80, "R_schema": 0.20, "R_banned": 0.00}
-
-    base = (
-        reward_weights["R_macro"]  * R_macro  +
-        reward_weights["R_schema"] * R_schema +
-        reward_weights["R_banned"] * R_banned
-    )
-
-    total = max(0.0, min(1.0, base))  # keep it cleanly in [0,1]
-    diag = {
-        "R_macro": R_macro, "R_schema": R_schema, "R_banned": R_banned,
-        "diag_macro": diag_macro, "diag_schema": diag_schema, "diag_banned": diag_banned,
-        "weights": reward_weights,
-    }
-    return total, diag
-
-def nutrition_reward_weekly(payload, daily_cal_target, daily_prot_target, banned_keywords, traj=None):
-    R_schema , diag_schema = verify_nutrition_schema(payload)
-    R_macro,  diag_macro  = verify_macros(payload, daily_cal_target, daily_prot_target)
-    if banned_keywords:
-        R_banned, diag_banned = verify_no_banned(payload, banned_keywords)
-    else:
-        R_banned = 1.0
-        diag_banned = {"ok": True}
-
-    # Heavier weight on macros
-    if banned_keywords:
-        reward_weights = {  "R_macro": 0.70, "R_schema": 0.20,  "R_banned": 0.10}
-    else:
-        reward_weights = { "R_macro": 0.70, "R_schema": 0.30, "R_banned": 0.00  }
-
-    F_final = 1.0
-   
-    base = reward_weights["R_macro"]*R_macro + reward_weights["R_schema"]*R_schema + reward_weights["R_banned"]*R_banned
-    total = max(0.0, min(1.05, base * F_final))
-    diag = {"R_macro": R_macro, "R_schema": R_schema, "R_banned": R_banned, "F_final": F_final,
-            "diag_macro": diag_macro, "diag_schema": diag_schema, "diag_banned": diag_banned}
-    return total, diag
-
+    
+    return final_score, info
