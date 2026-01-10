@@ -17,7 +17,7 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage, SystemMessage
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -138,7 +138,7 @@ def build_nutrition_agent_system(model_name: str | None = None, endpoint: str | 
     chat_model = init_chat_model(model, temperature=temperature, **kwargs)
 
     # Create the LangGraph ReAct agent
-    react_agent = create_react_agent(chat_model, NutritionTools, state_modifier=PLANNER_PROMPT)
+    react_agent = create_react_agent(chat_model, NutritionTools)
     # print("LangGraph agent created!")
     
     return react_agent
@@ -197,8 +197,9 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         # 5. Invoke Agent
         try:
             # We use a large recursion limit to allow for many tool calls
+            # Manually prepend the system prompt since state_modifier might not be supported in installed version
             final_state = agent.invoke(
-                {"messages": [HumanMessage(content=full_input)]},
+                {"messages": [SystemMessage(content=PLANNER_PROMPT), HumanMessage(content=full_input)]},
                 {"recursion_limit": MAX_TURNS + 5}
             )
         except Exception as e:
