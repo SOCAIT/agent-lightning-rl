@@ -13,6 +13,10 @@ from src.nutrition.data_utils import Scenario
 # Pinecone
 from pinecone import Pinecone
 import os
+# LangChain and LangGraph
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
 
 # ============================================================================
 # PINECONE SETUP
