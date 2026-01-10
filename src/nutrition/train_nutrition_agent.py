@@ -69,7 +69,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "spider",
+        "experiment_name": "nutrition",
         "nnodes": 1,
         "test_freq": 32,
         "total_epochs": 2,
@@ -82,7 +82,7 @@ def config_train_fast() -> Dict[str, Any]:
 
     # `EXPERIMENT_NAME="spider_$(date +%Y%m%d%H%M%S)"`
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    EXPERIMENT_NAME = f"spider_{timestamp}"
+    EXPERIMENT_NAME = f"nutrition_{timestamp}"
 
     # `PROJECT_NAME=AgentLightningCI`
     PROJECT_NAME = "AgentLightningCI"
@@ -100,8 +100,8 @@ def config_train_fast() -> Dict[str, Any]:
 
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-    config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
-    config["data"]["val_files"] = "data/test_dev.parquet"
+    config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-1.5B-Instruct"
+    config["data"]["val_files"] = "data/fitness_scenarios.jsonl"
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 1
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
@@ -140,14 +140,14 @@ def config_train_llama() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
     config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
-    config["actor_rollout_ref"]["model"]["path"] = "meta-llama/Llama-3.2-1B-Instruct"
+    config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-1.5B-Instruct"
     return config
 
 
 def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
     """Train the SQL agent with the given configuration."""
 
-    agent = LitSQLAgent()
+    agent = LitNutritionAgent()
     algorithm = agl.VERL(config)
     trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
