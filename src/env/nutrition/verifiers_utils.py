@@ -2,7 +2,7 @@ import jsonschema
 import json
 import re
 
-from src.constants.schema import nutrition_schema, workout_one_week_schema, daily_meal_plan_schema
+from src.env.nutrition.schema import nutrition_schema, workout_one_week_schema, daily_meal_plan_schema
 
 from jsonschema import validate, ValidationError
 
