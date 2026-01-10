@@ -259,7 +259,14 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
 
         # Calculate Combined Reward
         try:
-             final_reward, info = asyncio.run(combined_reward_v2(final_payload, scenario_data, traj))
+             # Check if there's an existing loop
+             try:
+                 loop = asyncio.get_running_loop()
+                 # If we are in a loop, use it
+                 final_reward, info = loop.run_until_complete(combined_reward_v2(final_payload, scenario_data, traj))
+             except RuntimeError:
+                 # No running loop, so we can use run
+                 final_reward, info = asyncio.run(combined_reward_v2(final_payload, scenario_data, traj))
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error calculating reward: {e}")
             final_reward = 0.0
