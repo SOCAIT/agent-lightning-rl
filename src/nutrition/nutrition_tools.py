@@ -78,7 +78,7 @@ class SearchResult:
 
 
 
-class NutritionTrajectory(Trajectory):
+class NutritionTrajectory(BaseModel):
     final_answer: FinalAnswer | None = None
 
 class FitnessScenario(BaseModel):
