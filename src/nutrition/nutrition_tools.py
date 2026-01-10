@@ -1,10 +1,9 @@
 import langgraph
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from datetime import datetime
 import json
-from typing import Any
 from functools import wraps
 
 from src.env.nutrition.verifiers_utils import get_payload
