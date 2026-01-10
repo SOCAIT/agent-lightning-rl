@@ -3,7 +3,7 @@ import math
 from typing import Tuple, Dict, Any, List, Optional, Union
 from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt
-from litellm import acompletion
+from litellm import completion
 from src.nutrition.data_utils import Scenario
 
 VARIETY_JUDGE_PROMPT = """
@@ -155,13 +155,13 @@ class VarietyJudgeResponse(BaseModel):
     reason: str
 
 @retry(stop=stop_after_attempt(2))
-async def llm_variety_judge(scenario_text, plan_json):
+def llm_variety_judge(scenario_text, plan_json):
     messages = [
         {"role": "system", "content": VARIETY_JUDGE_PROMPT},
         {"role": "user", "content": f"Context: {scenario_text}\n\nPlan: {json.dumps(plan_json)}"}
     ]
     try:
-        response = await acompletion(
+        response = completion(
             model="openai/gpt-4o-mini", # Or use the local model if needed
             messages=messages,
             response_format=VarietyJudgeResponse
@@ -174,7 +174,7 @@ async def llm_variety_judge(scenario_text, plan_json):
         return {"score": 0.5, "reason": "judge_error"}
 
 # Main Reward Wrapper
-async def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
+def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
     # Ensure payload is a dict
     payload = get_payload(payload)
     
@@ -198,7 +198,7 @@ async def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
     # 4. LLM Judge (Only if basic checks pass to save cost/time)
     r_variety_llm = 0.0
     if r_macro > 0.0 and r_variety_h > 0.0:
-         judge_res = await llm_variety_judge(scenario_data.question, payload)
+         judge_res = llm_variety_judge(scenario_data.question, payload)
          r_variety_llm = judge_res.get("score", 0.0)
          info_variety["llm_reason"] = judge_res.get("reason")
     else:

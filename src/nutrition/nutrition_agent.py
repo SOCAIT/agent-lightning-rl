@@ -5,7 +5,6 @@ import os
 import sys
 import json
 import time
-import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast, Annotated, Sequence, TypedDict
 
@@ -259,20 +258,7 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
 
         # Calculate Combined Reward
         try:
-             try:
-                 asyncio.get_running_loop()
-                 # Loop is running. Offload to a separate thread to avoid "nested loop" errors.
-                 import concurrent.futures
-                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                     # We must define the coroutine inside the thread or pass a function that creates it
-                     # to ensure it's attached to the new loop in the thread.
-                     def run_reward_async():
-                         return asyncio.run(combined_reward_v2(final_payload, scenario_data, traj))
-                     
-                     final_reward, info = executor.submit(run_reward_async).result()
-             except RuntimeError:
-                 # No running loop, safe to use asyncio.run in this thread
-                 final_reward, info = asyncio.run(combined_reward_v2(final_payload, scenario_data, traj))
+             final_reward, info = combined_reward_v2(final_payload, scenario_data, traj)
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error calculating reward: {e}")
             final_reward = 0.0
