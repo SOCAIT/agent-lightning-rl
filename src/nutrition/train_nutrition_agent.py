@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import pandas as pd
+import ray
 from nutrition_agent import LitNutritionAgent
 
 import agentlightning as agl
@@ -159,6 +160,10 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
 
 def main() -> None:
     """Main function to parse arguments and run training."""
+    # Initialize Ray with local mode or just current environment to avoid venv creation issues
+    if not ray.is_initialized():
+        ray.init(ignore_reinit_error=True)
+
     parser = argparse.ArgumentParser(
         description="Train an SQL agent on the Spider dataset using different model configurations"
     )
