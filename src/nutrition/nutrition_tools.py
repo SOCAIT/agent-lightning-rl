@@ -1,20 +1,9 @@
 import langgraph
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from datetime import datetime
 import json
-import os
-from typing import Any, Dict
+from typing import Any
 from functools import wraps
-from dataclasses import dataclass
-import sys
-from pathlib import Path
-from pinecone import Pinecone
-from langchain_core.tools import tool
-
-# Add project root to Python path
-project_root = Path(__file__).parent.parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from src.env.nutrition.verifiers_utils import get_payload
 
