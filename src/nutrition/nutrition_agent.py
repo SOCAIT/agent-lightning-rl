@@ -259,13 +259,19 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
 
         # Calculate Combined Reward
         try:
-             # Check if there's an existing loop
              try:
-                 loop = asyncio.get_running_loop()
-                 # If we are in a loop, use it
-                 final_reward, info = loop.run_until_complete(combined_reward_v2(final_payload, scenario_data, traj))
+                 asyncio.get_running_loop()
+                 # Loop is running. Offload to a separate thread to avoid "nested loop" errors.
+                 import concurrent.futures
+                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                     # We must define the coroutine inside the thread or pass a function that creates it
+                     # to ensure it's attached to the new loop in the thread.
+                     def run_reward_async():
+                         return asyncio.run(combined_reward_v2(final_payload, scenario_data, traj))
+                     
+                     final_reward, info = executor.submit(run_reward_async).result()
              except RuntimeError:
-                 # No running loop, so we can use run
+                 # No running loop, safe to use asyncio.run in this thread
                  final_reward, info = asyncio.run(combined_reward_v2(final_payload, scenario_data, traj))
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error calculating reward: {e}")
