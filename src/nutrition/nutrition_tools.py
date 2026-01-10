@@ -5,9 +5,80 @@ import json
 from typing import Any
 from functools import wraps
 
+from src.env.nutrition.verifiers_utils import get_payload
+
+from src.nutrition.data_utils import Scenario
 
 
-class NutritionTrajectory(langgraph.Trajectory):
+# ============================================================================
+# PINECONE SETUP
+# ============================================================================
+
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+
+recipe_index_name = "syntrafit-meals-nutrition"
+exercise_index_name = "syntrafit-exercises"
+
+recipe_index = pc.Index(recipe_index_name)
+exercise_index = pc.Index(exercise_index_name)
+
+def extract_meal_names(data):
+    data = data['result']
+    return_data = []
+
+
+    return [{"id" : hit['_id'] ,"name": hit["fields"]["name"], "calories":  hit["fields"]["calories"],"carbs":  hit["fields"]["carbs"], "protein": hit["fields"]["proteins"], "fat":  hit["fields"]["fats"]}  for hit in data["hits"] if "fields" in hit and "name" in hit["fields"]]
+
+ # Search the dense index
+results = recipe_index.search(
+          namespace="syntrafit",
+          query={
+              "top_k": 2,
+              "inputs": {
+                  'text': " Chicken and rice healthy"
+              }
+          },
+          rerank={
+          "model": "bge-reranker-v2-m3",
+          "top_n": 2,
+          "rank_fields": [ "name"]
+    },
+      )
+
+print(results)
+
+extract_meal_names(results)
+
+
+class FinalAnswer(BaseModel):
+    answer: Dict[str, Any]
+
+    @field_validator("answer", mode="before")
+    @classmethod
+    def ensure_dict(cls, v):
+            # Unwrap nested FinalAnswer by mistake
+            if isinstance(v, FinalAnswer):
+                return v.answer
+            # Parse JSON string
+            if isinstance(v, str):
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"answer must be a JSON object string or dict; got invalid JSON: {e}")
+            # Already a dict
+            if isinstance(v, dict):
+                return v
+            raise TypeError(f"Unsupported type for answer: {type(v).__name__}")
+
+
+@dataclass
+class SearchResult:
+    message_id: str
+    snippet: str
+
+
+
+class NutritionTrajectory(Trajectory):
     final_answer: FinalAnswer | None = None
 
 class FitnessScenario(BaseModel):
