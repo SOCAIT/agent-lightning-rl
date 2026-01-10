@@ -79,7 +79,7 @@ def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
 @log_tool("return_final_answer_tool")
 def return_final_answer_tool(answer: str) -> dict:
         """Return the final answer (daily meal plan) in the correct format """
-        nonlocal final_answer
+        # nonlocal final_answer
         payload = get_payload(answer)          # <-- normalize here
         final_answer = FinalAnswer(answer=payload)
         return final_answer.model_dump()
