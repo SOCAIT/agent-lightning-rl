@@ -161,8 +161,10 @@ def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
 def main() -> None:
     """Main function to parse arguments and run training."""
     # Initialize Ray with local mode or just current environment to avoid venv creation issues
+    print(f"Ray is installed at: {ray.__file__}")
     if not ray.is_initialized():
-        ray.init(ignore_reinit_error=True)
+        # Force using the current environment and disable complex runtime_env creation
+        ray.init(ignore_reinit_error=True, runtime_env=None)
 
     parser = argparse.ArgumentParser(
         description="Train an SQL agent on the Spider dataset using different model configurations"
