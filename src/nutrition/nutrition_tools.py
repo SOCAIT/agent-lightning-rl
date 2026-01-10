@@ -9,7 +9,6 @@ from src.env.nutrition.verifiers_utils import get_payload
 
 from src.nutrition.data_utils import Scenario
 
-
 # ============================================================================
 # PINECONE SETUP
 # ============================================================================
