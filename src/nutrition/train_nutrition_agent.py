@@ -17,8 +17,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "use_kl_in_reward": False,
     },
     "data": {
-        "train_files": "data/fitness_scenarios.jsonl",
-        "val_files": "data/fitness_scenarios.jsonl",
+        "train_files": "data/fitness_scenarios_train.parquet",
+        "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 32,
         "max_prompt_length": 4096,
         "max_response_length": 2048,
@@ -101,7 +101,7 @@ def config_train_fast() -> Dict[str, Any]:
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
     config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-1.5B-Instruct"
-    config["data"]["val_files"] = "data/fitness_scenarios.jsonl"
+    config["data"]["val_files"] = "data/fitness_scenarios_val.parquet"
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 1
     config["trainer"]["experiment_name"] = EXPERIMENT_NAME
