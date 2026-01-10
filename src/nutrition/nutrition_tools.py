@@ -16,7 +16,7 @@ class FitnessScenario(BaseModel):
 
  
  
- def log_tool(tool_name):
+def log_tool(tool_name):
         def decorator(fn):
             @wraps(fn)
             def wrapper(*args, **kwargs):
@@ -53,10 +53,9 @@ class FitnessScenario(BaseModel):
                     raise
             return wrapper
         return decorator
-
-    @tool
-    @log_tool("recipe_semantic_search")
-    def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
+@tool
+@log_tool("recipe_semantic_search")
+def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
       """Search the recipe index for the most similar recipes to the query."""
       # Search the dense index
       results = recipe_index.search(
@@ -76,9 +75,9 @@ class FitnessScenario(BaseModel):
       return results
 
 
-    @tool
-    @log_tool("return_final_answer_tool")
-    def return_final_answer_tool(answer: str) -> dict:
+@tool
+@log_tool("return_final_answer_tool")
+def return_final_answer_tool(answer: str) -> dict:
         """Return the final answer (daily meal plan) in the correct format """
         nonlocal final_answer
         payload = get_payload(answer)          # <-- normalize here
