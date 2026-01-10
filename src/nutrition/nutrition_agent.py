@@ -25,6 +25,7 @@ from langchain_core.tools import tool
 from src.nutrition.nutrition_tools import NutritionTools
 
 MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
+MAX_TURNS = 20 
 
 PLANNER_PROMPT = f"""
 You are a nutrition planner specialist who creates daily nutrition plans. Think carefully and pay great attention to macro numbers.
@@ -123,5 +124,5 @@ def build_nutrition_agent_system():
     print("LangGraph agent created!")
     print(react_agent)
 
-    MAX_TURNS = 20 
+    
     return react_agent
