@@ -197,9 +197,13 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         try:
             # We use a large recursion limit to allow for many tool calls
             # Manually prepend the system prompt since state_modifier might not be supported in installed version
+            handler = self.tracer.get_langchain_handler()
             final_state = agent.invoke(
                 {"messages": [SystemMessage(content=PLANNER_PROMPT), HumanMessage(content=full_input)]},
-                {"recursion_limit": MAX_TURNS + 5}
+                {
+                    "recursion_limit": MAX_TURNS + 5,
+                    "callbacks": [handler] if handler else [],
+                },
             )
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error during agent invocation: {e}")

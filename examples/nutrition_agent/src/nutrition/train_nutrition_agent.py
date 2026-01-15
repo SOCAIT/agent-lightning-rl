@@ -72,8 +72,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "project_name": "AgentLightning",
         "experiment_name": "nutrition",
         "nnodes": 1,
-        "test_freq": 32,
-        "total_epochs": 2,
+        "test_freq": 16,
+        "total_epochs": 5,
     },
 }
 
