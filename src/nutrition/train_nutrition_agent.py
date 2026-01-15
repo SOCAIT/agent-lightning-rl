@@ -63,7 +63,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
             "model_kwargs": {
-                "attn_implementation": "eager"
+                "attn_implementation": "eager",
+                "use_flash_attention_2": False,
+                "trust_remote_code": True
             },
         },
     },
