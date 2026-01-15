@@ -62,11 +62,6 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "path": "Qwen/Qwen2.5-1.5B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
-            "model_kwargs": {
-                "attn_implementation": "eager",
-                "use_flash_attention_2": False,
-                "trust_remote_code": True
-            },
         },
     },
     "trainer": {
@@ -127,8 +122,10 @@ def config_train_npu() -> Dict[str, Any]:
     """A configuration for training with NPU."""
 
     config = deepcopy(RL_TRAINING_CONFIG)
-    del config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["enable_auto_tool_choice"]
-    del config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"]
+    # Note: engine_kwargs is commented out in base config for HF backend
+    # If using vLLM, uncomment engine_kwargs in base config first
+    # del config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["enable_auto_tool_choice"]
+    # del config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"]
     del config["trainer"]["logger"][1]
     config["actor_rollout_ref"]["actor"]["use_torch_compile"] = False
     config["trainer"]["val_before_train"] = False
@@ -141,11 +138,15 @@ def config_train_llama() -> Dict[str, Any]:
     """A configuration for training with LLaMA-3.2-1B-Instruct.
 
     You will need a `HF_TOKEN` set to run with this config.
+    Note: This config requires vLLM backend. Uncomment engine_kwargs in base config
+    and set rollout name to "vllm" to use this configuration.
     """
 
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["multi_turn"]["format"] = "llama3_json"
-    config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
+    # Note: engine_kwargs is commented out in base config for HF backend
+    # Uncomment engine_kwargs in base config and set name to "vllm" to use this
+    # config["actor_rollout_ref"]["rollout"]["engine_kwargs"]["vllm"]["tool_call_parser"] = "llama3_json"
     config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-1.5B-Instruct"
     return config
 
