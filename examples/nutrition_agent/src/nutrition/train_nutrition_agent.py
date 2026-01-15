@@ -30,13 +30,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "tensor_model_parallel_size": 1,
             "n": 4,
             "log_prob_micro_batch_size_per_gpu": 4,
-            "multi_turn": {"format": "openai"},
+            "multi_turn": {"format": "json"},
             "name": "vllm",
             "gpu_memory_utilization": 0.8,
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
-                    "tool_call_parser": "openai",
+                    "tool_call_parser": "json",
                 }
             },
         },
