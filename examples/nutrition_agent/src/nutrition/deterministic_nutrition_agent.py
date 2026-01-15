@@ -231,7 +231,9 @@ class LitNutritionAgentDeterministic(agl.LitAgent[Dict[str, Any]]):
         full_input = _truncate_text(full_input, MAX_INPUT_CHARS)
 
         query = f"{context.get('dietary_prefs','')} {context.get('goal','')} one-day meal plan"
-        candidates = nutrition_tools_module.recipe_semantic_search(query.strip(), k=6)
+        candidates = nutrition_tools_module.recipe_semantic_search.invoke(
+            {"meal_query": query.strip(), "k": 6}
+        )
         candidates = _filter_candidates(candidates, banned_keywords)
         plan = _build_plan_from_candidates(candidates, target_calories)
 

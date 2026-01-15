@@ -121,7 +121,9 @@ def _invoke_fallback_model(
 def _build_fallback_plan(context: dict) -> dict:
     banned_keywords = {str(k).lower() for k in (context.get("banned_keywords") or [])}
     search_query = "balanced one-day meal plan"
-    results = nutrition_tools_module.recipe_semantic_search(search_query, k=5)
+    results = nutrition_tools_module.recipe_semantic_search.invoke(
+        {"meal_query": search_query, "k": 5}
+    )
     for meal in results:
         name = str(meal.get("name", ""))
         if any(bad in name.lower() for bad in banned_keywords):
