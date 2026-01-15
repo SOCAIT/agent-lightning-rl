@@ -36,82 +36,23 @@ agl.setup_logging(apply_to=[__name__])
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
-MAX_TURNS = 20 
-MAX_CONTEXT_CHARS = 1200
-MAX_INPUT_CHARS = 1800
+MAX_TURNS = 6
+MAX_CONTEXT_CHARS = 400
+MAX_INPUT_CHARS = 800
+FALLBACK_INPUT_CHARS = 400
 
 PLANNER_PROMPT = f"""
-You are a nutrition planner specialist who creates daily nutrition plans. Think carefully and pay great attention to macro numbers.
+You are a nutrition planner. Create a ONE-DAY meal plan that matches the user's macros and dietary restrictions.
 
-You must create a one-day meal plan that meets the user's macro and dietary targets.
+Tools:
+- recipe_semantic_search(meal_query, k)
+- return_final_answer_tool(answer)
 
-TOOLS YOU CAN USE (names must match exactly):
-1) recipe_semantic_search(meal_query, k) – Search for relevant recipes and return their true macros.
-2) return_final_answer_tool(answer) – Return the final answer (JSON plan).
-
-ROUTING RULES (VERY IMPORTANT):
-- If the user asks for a meal/nutrition plan, you MUST NOT call get_available_exercises or generate_workout_plan_mutation.
-- Even if the request is for a 7-day plan, create only a single-day meal plan.
-
-EXECUTION POLICY:
-- You MAY call tools during reasoning to gather information and choose recipes.
-- The FINAL assistant message must output ONLY a single call to return_final_answer_tool with the exact JSON plan (stringified if needed).
-- You may take up to {MAX_TURNS} turns to find the answer.
-
-============================================================
-NUTRITION PLAN PIPELINE
-============================================================
-
-1) PLAN SKELETON
-   • Generate a one-day meal plan for the user. The plan should have meals that fulfill the user's daily macro targets.
-   • Create a reasonable number of meals (meals can include snacks). Base the count/portions on the user's macro targets.
-   • Meal names in the final plan MUST be recipe names returned by recipe_semantic_search (do not invent names).
-
-2) USE RECIPE SEMANTIC SEARCH TOOL
-   • Use recipe_semantic_search to find relevant recipes with correct nutrition info.
-   • You MUST ALWAYS use the macros retrieved from the tool and NOT infer your own data.
-   • For each meal you include:
-     - Set "name" to the exact recipe name from the tool
-     - Set "quantity" to a multiplier (e.g., 1.0 for one serving, 1.5 for 1.5 servings, 0.5 for half serving)
-     - Calculate macros as: quantity × base_recipe_macros
-     - Example: If recipe has 400 cal and quantity=1.5, then calories should be 600
-   • If a candidate recipe includes any banned keywords/ingredients from context, discard it and search again.
-
-3) MACRO ADJUSTMENT (per day)
-   • Sum macros for the day across all meals.
-   • If totals differ from the user's daily targets, adjust the "quantity" field for meals (still using tool macros) until daily totals are within ±5% of the user's targets (calories/protein/carbs/fat).
-   • You can use fractional quantities like 0.75, 1.25, 1.5 to hit precise macro targets.
-   • Respect ALL banned keywords/ingredients from context.
-
-4) JSON MEAL PLAN (scratch-step)
-   • Build JSON matching this schema (no comments):
-
-     {{
-       "meals": [
-         {{
-           "name": "Grilled Chicken & Rice",
-           "quantity": 1.5,
-           "calories": 700,
-           "proteins": 45,
-           "carbs": 60,
-           "fats": 20,
-           "sequence": 1
-         }}
-       ]
-     }}
-
-   • The "quantity" field is a multiplier (can be fractional like 1.5, 0.75, 2.0) that represents portions/servings.
-   • Macros (calories, proteins, carbs, fats) should be: quantity × base_recipe_macros from recipe_semantic_search.
-   • Ensure the summed macros for the day are within ±5% of the targets.
-   • IMPORTANT: Every "name" MUST match a recipe name previously returned by recipe_semantic_search. 
-   • The quantity field allows precise macro targeting by scaling recipe portions.
-
-5) IF YOU REACHED MAX_TURNS and you have not found a final answer, return the best final answer you can with all information you gathered.
-
-6) TOOL CALL (FINALIZE)
-   • Call return_final_answer_tool with:
-     - answer = the EXACT JSON meal plan (stringified if needed)
-
+Rules:
+- Always return a single-day plan even if user asks for 7 days.
+- Meal names MUST come from recipe_semantic_search results.
+- Macros must be based on tool results and scaled by quantity (serving multiplier).
+- Final response MUST be a single call to return_final_answer_tool with the JSON plan.
 """
 
 class AgentState(TypedDict):
@@ -148,6 +89,34 @@ def build_nutrition_agent_system(model_name: str | None = None, endpoint: str | 
     # print("LangGraph agent created!")
     
     return react_agent
+
+def _invoke_fallback_model(
+    model_name: str,
+    endpoint: str,
+    api_key: str | None,
+    temperature: float,
+    full_input: str,
+    handler,
+):
+    fallback_prompt = (
+        "Return ONLY a single-day JSON meal plan with fields: "
+        "meals[{name,quantity,calories,proteins,carbs,fats,sequence}]."
+    )
+    fallback_input = _truncate_text(full_input, FALLBACK_INPUT_CHARS)
+    fallback_model = init_chat_model(
+        model_name,
+        model_provider="openai",
+        openai_api_base=endpoint,
+        openai_api_key=api_key or os.environ.get("OPENAI_API_KEY", "dummy"),
+        temperature=temperature,
+        max_retries=0,
+        max_tokens=512,
+    )
+    result = fallback_model.invoke(
+        [SystemMessage(content=fallback_prompt), HumanMessage(content=fallback_input)],
+        {"callbacks": [handler] if handler else []},
+    )
+    return result
 
 class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
 
@@ -209,7 +178,7 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         # Add context to the prompt or system message? 
         # The PLANNER_PROMPT is static. We can prepend context to the user message.
         # Construct a rich user message with context
-        context_str = json.dumps(filtered_context, default=str, indent=2)
+        context_str = json.dumps(filtered_context, default=str, separators=(",", ":"))
         context_str = _truncate_text(context_str, MAX_CONTEXT_CHARS)
         question = _truncate_text(question, MAX_INPUT_CHARS // 2)
         full_input = f"User Profile/Context:\n{context_str}\n\nRequest: {question}"
@@ -225,13 +194,27 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
             final_state = agent.invoke(
                 {"messages": [SystemMessage(content=PLANNER_PROMPT), HumanMessage(content=full_input)]},
                 {
-                    "recursion_limit": MAX_TURNS + 5,
+                    "recursion_limit": MAX_TURNS + 2,
                     "callbacks": [handler] if handler else [],
                 },
             )
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error during agent invocation: {e}")
-            return None
+            try:
+                fallback_result = _invoke_fallback_model(
+                    model_name=llm.model,
+                    endpoint=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
+                    api_key=os.environ.get("OPENAI_API_KEY", "dummy"),
+                    temperature=temp,
+                    full_input=full_input,
+                    handler=handler,
+                )
+                final_state = {"messages": [fallback_result]}
+            except Exception as fallback_error:
+                logger.exception(
+                    f"[Rollout {rollout.rollout_id}] Fallback model invocation failed: {fallback_error}"
+                )
+                return None
 
         # 6. Extract Result
         # We look for the last tool call to 'return_final_answer_tool' or the final message
@@ -262,7 +245,13 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         
         if final_payload is None:
             logger.warning(f"[Rollout {rollout.rollout_id}] No final answer tool call found.")
-            return None
+            # Fallback: try to parse the last assistant message as JSON.
+            last_msg = messages[-1] if messages else None
+            if last_msg is not None and hasattr(last_msg, "content"):
+                try:
+                    final_payload = json.loads(last_msg.content)  # type: ignore[arg-type]
+                except Exception:
+                    return None
 
         # 7. Calculate Reward
         # Extract targets from context
