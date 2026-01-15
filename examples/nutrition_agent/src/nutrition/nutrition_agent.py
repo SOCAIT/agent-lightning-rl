@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
 MAX_TURNS = 20 
+MAX_CONTEXT_CHARS = 1200
+MAX_INPUT_CHARS = 1800
 
 PLANNER_PROMPT = f"""
 You are a nutrition planner specialist who creates daily nutrition plans. Think carefully and pay great attention to macro numbers.
@@ -120,6 +122,11 @@ class MockTraj:
     def __init__(self):
         self.messages_and_choices = []
 
+def _truncate_text(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 12] + " ...(truncated)"
+
 def build_nutrition_agent_system(model_name: str | None = None, endpoint: str | None = None, api_key: str | None = None, temperature: float = 0.2):
     # Initialize the chat model
     # If parameters are provided, use them; otherwise default to existing constants/env
@@ -182,14 +189,31 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         )
 
         # 4. Prepare Input
-        question = task["input_question"]
-        context = task.get("context", {})
+        question = str(task.get("input_question", "")).strip()
+        if not question:
+            logger.warning(f"[Rollout {rollout.rollout_id}] Empty question. Skipping.")
+            return None
+
+        context = task.get("context", {}) or {}
+        filtered_context = {
+            "daily_cal_target": context.get("daily_cal_target"),
+            "daily_prot_target": context.get("daily_prot_target"),
+            "daily_carb_target": context.get("daily_carb_target"),
+            "daily_fat_target": context.get("daily_fat_target"),
+            "banned_keywords": context.get("banned_keywords"),
+            "dietary_prefs": context.get("dietary_prefs"),
+            "activity": context.get("activity"),
+            "goal": context.get("goal"),
+        }
         
         # Add context to the prompt or system message? 
         # The PLANNER_PROMPT is static. We can prepend context to the user message.
         # Construct a rich user message with context
-        context_str = json.dumps(context, indent=2)
+        context_str = json.dumps(filtered_context, default=str, indent=2)
+        context_str = _truncate_text(context_str, MAX_CONTEXT_CHARS)
+        question = _truncate_text(question, MAX_INPUT_CHARS // 2)
         full_input = f"User Profile/Context:\n{context_str}\n\nRequest: {question}"
+        full_input = _truncate_text(full_input, MAX_INPUT_CHARS)
         
         logger.info(f"[Rollout {rollout.rollout_id}] Question: {question}")
 
@@ -207,7 +231,7 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
             )
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error during agent invocation: {e}")
-            return 0.0 # Return 0 reward on failure
+            return None
 
         # 6. Extract Result
         # We look for the last tool call to 'return_final_answer_tool' or the final message
@@ -238,7 +262,7 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         
         if final_payload is None:
             logger.warning(f"[Rollout {rollout.rollout_id}] No final answer tool call found.")
-            return 0.0
+            return None
 
         # 7. Calculate Reward
         # Extract targets from context
@@ -249,10 +273,13 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         banned_keywords = context.get("banned_keywords", [])
         
         # Create Scenario Object
+        split = task.get("split", "test")
+        if split == "val":
+            split = "test"
         scenario_data = Scenario(
             id=str(task.get("id", "unknown")),
             question=question,
-            split=task.get("split", "test"),
+            split=split,
             daily_cal_target=daily_cal_target,
             daily_prot_target=daily_prot_target,
             daily_carb_target=daily_carb_target,
