@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 import ray
-from nutrition_agent import LitNutritionAgent
+from nutrition_agent import LitNutritionAgent, LitNutritionAgentDeterministic
 
 import agentlightning as agl
 
@@ -151,10 +151,15 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
-def train(config: Dict[str, Any], active_agent: Optional[str]) -> None:
+def train(config: Dict[str, Any], active_agent: Optional[str], agent_type: str) -> None:
     """Train the SQL agent with the given configuration."""
 
-    agent = LitNutritionAgent()
+    if agent_type == "deterministic":
+        agent = LitNutritionAgentDeterministic(optimize_with_llm=False)
+    elif agent_type == "deterministic-llm":
+        agent = LitNutritionAgentDeterministic(optimize_with_llm=True)
+    else:
+        agent = LitNutritionAgent()
     algorithm = agl.VERL(config)
     trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
@@ -185,6 +190,12 @@ def main() -> None:
     parser.add_argument(
         "--active-agent", type=str, help="Override the active agent name (default: auto-generated based on config)"
     )
+    parser.add_argument(
+        "--agent-type",
+        choices=["llm", "deterministic", "deterministic-llm"],
+        default="llm",
+        help="Agent implementation to use for rollout behavior.",
+    )
 
     args = parser.parse_args()
 
@@ -203,7 +214,7 @@ def main() -> None:
     print(f"Starting training with '{args.config}' configuration...")
     print(f"Active agent: {active_agent}")
 
-    train(config, active_agent)
+    train(config, active_agent, args.agent_type)
 
 
 if __name__ == "__main__":
