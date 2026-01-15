@@ -118,6 +118,33 @@ def _invoke_fallback_model(
     )
     return result
 
+def _build_fallback_plan(context: dict) -> dict:
+    banned_keywords = {str(k).lower() for k in (context.get("banned_keywords") or [])}
+    search_query = "balanced one-day meal plan"
+    results = nutrition_tools_module.recipe_semantic_search(search_query, k=5)
+    for meal in results:
+        name = str(meal.get("name", ""))
+        if any(bad in name.lower() for bad in banned_keywords):
+            continue
+        calories = float(meal.get("calories", 0))
+        carbs = float(meal.get("carbs", 0))
+        protein = float(meal.get("protein", 0))
+        fat = float(meal.get("fat", 0))
+        return {
+            "meals": [
+                {
+                    "name": name,
+                    "quantity": 1.0,
+                    "calories": calories,
+                    "proteins": protein,
+                    "carbs": carbs,
+                    "fats": fat,
+                    "sequence": 1,
+                }
+            ]
+        }
+    return {"meals": []}
+
 class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
 
     def __init__(
@@ -251,7 +278,10 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
                 try:
                     final_payload = json.loads(last_msg.content)  # type: ignore[arg-type]
                 except Exception:
-                    return None
+                    final_payload = None
+
+        if final_payload is None:
+            final_payload = _build_fallback_plan(context)
 
         # 7. Calculate Reward
         # Extract targets from context
