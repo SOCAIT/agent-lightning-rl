@@ -8,7 +8,8 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 import ray
-from nutrition_agent import LitNutritionAgent, LitNutritionAgentDeterministic
+from nutrition_agent import LitNutritionAgent
+from deterministic_nutrition_agent import LitNutritionAgentDeterministic
 
 import agentlightning as agl
 
