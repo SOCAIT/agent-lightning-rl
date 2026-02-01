@@ -21,29 +21,30 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 24,  # Adjusted for H200 141GB - good balance
-        "max_prompt_length": 10240,  # Adjusted for H200 141GB: supports multi-turn tool calls (6 turns × ~1.7K tokens/turn)
-        "max_response_length": 3072,  # Adjusted for H200 141GB: sufficient for complete plan generation
+        "train_batch_size": 16,  # Reduced to be more conservative with memory
+        "max_prompt_length": 8192,  # Reduced for stability: supports multi-turn tool calls (6 turns × ~1.3K tokens/turn)
+        "max_response_length": 2048,  # Reduced for stability: sufficient for complete plan generation
         "truncation": "error",
     },
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 4,  # Parallel rollouts for H200 141GB
-            "log_prob_micro_batch_size_per_gpu": 4,
+            "n": 2,  # Reduced to 2 parallel rollouts to give vLLM more breathing room
+            "log_prob_micro_batch_size_per_gpu": 2,  # Reduced to 2
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.6,  # Adjusted for H200 141GB (~85GB for vLLM)
-            "max_model_len": 13312,  # Adjusted context length for vLLM (10240 prompt + 3072 response)
+            "gpu_memory_utilization": 0.5,  # Reduced to 50% (~70GB for vLLM) to prevent crashes
+            "max_model_len": 10240,  # Conservative max context length for stability
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
+                    "max_num_seqs": 32,  # Limit concurrent sequences
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 24,  # Adjusted for H200 141GB to match train_batch_size
+            "ppo_mini_batch_size": 16,  # Reduced to match train_batch_size
             "ppo_micro_batch_size_per_gpu": 4,
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
@@ -61,7 +62,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-7B-Instruct",  # Updated to 7B model
+            "path": "Qwen/Qwen3-4B-Instruct-2507",  # Updated to 7B model
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
