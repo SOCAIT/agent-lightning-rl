@@ -134,6 +134,7 @@ def log_tool(tool_name):
         return decorator
 
 def _normalize_meal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
+    print(f"DEBUG: Normalizing payload keys: {list(payload.keys())}")
     meals: List[Dict[str, Any]] | None = None
     if isinstance(payload.get("meals"), list):
         meals = payload.get("meals")
@@ -155,22 +156,32 @@ def _normalize_meal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
     for meal in meals:
         if not isinstance(meal, dict):
             continue
+        
+        # Flatten nested 'meal' dicts or handle 'meal' as string name
+        candidates = meal.copy()
         if isinstance(meal.get("meal"), dict):
-            meal = meal.get("meal")
+            candidates.update(meal.get("meal"))
+        elif isinstance(meal.get("meal"), str):
+            candidates["name"] = meal.get("meal")
+            
         items = meal.get("items")
         if isinstance(items, list) and items:
             for item in items:
                 if not isinstance(item, dict):
                     continue
+                # Merge item with parent candidates to inherit missing fields if needed
+                item_candidates = candidates.copy()
+                item_candidates.update(item)
+                
                 normalized.append(
                     {
-                        "name": item.get("name") or item.get("meal") or item.get("meal_name") or "",
-                        "quantity": float(item.get("quantity", 1)),
-                        "calories": float(item.get("calories", 0)),
-                        "proteins": float(item.get("proteins", item.get("protein", 0))),
-                        "carbs": float(item.get("carbs", item.get("carb", 0))),
-                        "fats": float(item.get("fats", item.get("fat", 0))),
-                        "sequence": int(item.get("sequence", seq)),
+                        "name": item_candidates.get("name") or item_candidates.get("meal") or item_candidates.get("meal_name") or "Unknown Meal",
+                        "quantity": float(item_candidates.get("quantity", 1)),
+                        "calories": float(item_candidates.get("calories", 0)),
+                        "proteins": float(item_candidates.get("proteins", item_candidates.get("protein", 0))),
+                        "carbs": float(item_candidates.get("carbs", item_candidates.get("carb", 0))),
+                        "fats": float(item_candidates.get("fats", item_candidates.get("fat", 0))),
+                        "sequence": int(item_candidates.get("sequence", seq)),
                     }
                 )
                 seq += 1
@@ -178,18 +189,19 @@ def _normalize_meal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         normalized.append(
             {
-                "name": meal.get("name") or meal.get("meal") or meal.get("meal_name") or "",
-                "quantity": float(meal.get("quantity", 1)),
-                "calories": float(meal.get("calories", 0)),
-                "proteins": float(meal.get("proteins", meal.get("protein", 0))),
-                "carbs": float(meal.get("carbs", meal.get("carb", 0))),
-                "fats": float(meal.get("fats", meal.get("fat", 0))),
-                "sequence": int(meal.get("sequence", seq)),
+                "name": candidates.get("name") or candidates.get("meal") or candidates.get("meal_name") or "Unknown Meal",
+                "quantity": float(candidates.get("quantity", 1)),
+                "calories": float(candidates.get("calories", 0)),
+                "proteins": float(candidates.get("proteins", candidates.get("protein", 0))),
+                "carbs": float(candidates.get("carbs", candidates.get("carb", 0))),
+                "fats": float(candidates.get("fats", candidates.get("fat", 0))),
+                "sequence": int(candidates.get("sequence", seq)),
             }
         )
         seq += 1
 
     payload["meals"] = normalized
+    print(f"DEBUG: Normalized {len(normalized)} meals.")
     return payload
 @tool
 @log_tool("recipe_semantic_search")
