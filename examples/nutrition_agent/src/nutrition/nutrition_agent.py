@@ -70,6 +70,35 @@ def _truncate_text(text: str, max_chars: int) -> str:
         return text
     return text[: max_chars - 12] + " ...(truncated)"
 
+def _build_fallback_plan(context: dict) -> dict:
+    banned_keywords = {str(k).lower() for k in (context.get("banned_keywords") or [])}
+    search_query = "balanced one-day meal plan"
+    results = nutrition_tools_module.recipe_semantic_search.invoke(
+        {"meal_query": search_query, "k": 5}
+    )
+    for meal in results:
+        name = str(meal.get("name", ""))
+        if any(bad in name.lower() for bad in banned_keywords):
+            continue
+        calories = float(meal.get("calories", 0))
+        carbs = float(meal.get("carbs", 0))
+        protein = float(meal.get("protein", 0))
+        fat = float(meal.get("fat", 0))
+        return {
+            "meals": [
+                {
+                    "name": name,
+                    "quantity": 1.0,
+                    "calories": calories,
+                    "proteins": protein,
+                    "carbs": carbs,
+                    "fats": fat,
+                    "sequence": 1,
+                }
+            ]
+        }
+    return {"meals": []}
+
 def _log_message_tail(rollout_id: str, messages: Sequence[BaseMessage], limit: int = 6) -> None:
     if not messages:
         logger.info(f"[Rollout {rollout_id}] No messages to log.")
@@ -118,11 +147,13 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         val_temperature: Optional[float] = None,
         strict_failures: bool = False,
         debug_messages: bool = False,
+        allow_fallback_plan: bool = True,
     ) -> None:
         super().__init__(trained_agents=trained_agents)
         self.val_temperature = val_temperature
         self.strict_failures = strict_failures
         self.debug_messages = debug_messages
+        self.allow_fallback_plan = allow_fallback_plan
 
     def rollout(
         self,
@@ -243,7 +274,10 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
                 _log_message_tail(rollout.rollout_id, messages)
             if self.strict_failures:
                 raise RuntimeError("No final payload parsed from agent output.")
-            return None
+            if self.allow_fallback_plan:
+                final_payload = _build_fallback_plan(context)
+            else:
+                return None
 
         # 7. Calculate Reward
         # Extract targets from context

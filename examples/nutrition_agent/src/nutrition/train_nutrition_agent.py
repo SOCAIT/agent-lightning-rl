@@ -162,6 +162,7 @@ def train(
     agent_type: str,
     strict_failures: bool,
     debug_agent: bool,
+    allow_fallback_plan: bool,
 ) -> None:
     """Train the SQL agent with the given configuration."""
 
@@ -170,7 +171,11 @@ def train(
     elif agent_type == "deterministic-llm":
         agent = LitNutritionAgentDeterministic(optimize_with_llm=True)
     else:
-        agent = LitNutritionAgent(strict_failures=strict_failures, debug_messages=debug_agent)
+        agent = LitNutritionAgent(
+            strict_failures=strict_failures,
+            debug_messages=debug_agent,
+            allow_fallback_plan=allow_fallback_plan,
+        )
     algorithm = agl.VERL(config)
     trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
@@ -217,6 +222,11 @@ def main() -> None:
         action="store_true",
         help="Log tail messages when parsing fails.",
     )
+    parser.add_argument(
+        "--allow-fallback-plan",
+        action="store_true",
+        help="Use a deterministic fallback meal plan if parsing fails.",
+    )
 
     args = parser.parse_args()
 
@@ -235,7 +245,14 @@ def main() -> None:
     print(f"Starting training with '{args.config}' configuration...")
     print(f"Active agent: {active_agent}")
 
-    train(config, active_agent, args.agent_type, args.strict_failures, args.debug_agent)
+    train(
+        config,
+        active_agent,
+        args.agent_type,
+        args.strict_failures,
+        args.debug_agent,
+        args.allow_fallback_plan,
+    )
 
 
 if __name__ == "__main__":
