@@ -22,8 +22,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 8,  # Further reduced from 16 to fit GPU memory with large sequence lengths
-        "max_prompt_length": 12288,  # Increased for Qwen 7B: supports multi-turn tool calls (6 turns × ~2K tokens/turn)
-        "max_response_length": 4096,  # Increased for Qwen 7B: ensures complete plan generation with tool calls
+        "max_prompt_length": 8192,  # Reduced from 12288: still supports multi-turn tool calls (6 turns × ~1.3K tokens/turn)
+        "max_response_length": 3072,  # Reduced from 4096: still sufficient for complete plan generation with tool calls
         "truncation": "error",
     },
     "actor_rollout_ref": {
