@@ -40,7 +40,6 @@ MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 MAX_TURNS = 6
 MAX_CONTEXT_CHARS = 400
 MAX_INPUT_CHARS = 800
-FALLBACK_INPUT_CHARS = 400
 
 PLANNER_PROMPT = f"""
 You are a nutrition planner. Create a ONE-DAY meal plan that matches the user's macros and dietary restrictions.
@@ -69,6 +68,24 @@ def _truncate_text(text: str, max_chars: int) -> str:
         return text
     return text[: max_chars - 12] + " ...(truncated)"
 
+def _log_message_tail(rollout_id: str, messages: Sequence[BaseMessage], limit: int = 6) -> None:
+    if not messages:
+        logger.info(f"[Rollout {rollout_id}] No messages to log.")
+        return
+    tail = list(messages)[-limit:]
+    for idx, msg in enumerate(tail, start=1):
+        msg_type = msg.__class__.__name__
+        msg_name = getattr(msg, "name", None)
+        content = getattr(msg, "content", "")
+        if not isinstance(content, str):
+            try:
+                content = json.dumps(content, default=str)
+            except Exception:
+                content = str(content)
+        content = _truncate_text(content, 500)
+        name_str = f" name={msg_name}" if msg_name else ""
+        logger.info(f"[Rollout {rollout_id}] Message {idx}/{len(tail)} {msg_type}{name_str}: {content}")
+
 def build_nutrition_agent_system(model_name: str | None = None, endpoint: str | None = None, api_key: str | None = None, temperature: float = 0.2):
     # Initialize the chat model
     # If parameters are provided, use them; otherwise default to existing constants/env
@@ -91,72 +108,19 @@ def build_nutrition_agent_system(model_name: str | None = None, endpoint: str | 
     
     return react_agent
 
-def _invoke_fallback_model(
-    model_name: str,
-    endpoint: str,
-    api_key: str | None,
-    temperature: float,
-    full_input: str,
-    handler,
-):
-    fallback_prompt = (
-        "Return ONLY a single-day JSON meal plan with fields: "
-        "meals[{name,quantity,calories,proteins,carbs,fats,sequence}]."
-    )
-    fallback_input = _truncate_text(full_input, FALLBACK_INPUT_CHARS)
-    fallback_model = init_chat_model(
-        model_name,
-        model_provider="openai",
-        openai_api_base=endpoint,
-        openai_api_key=api_key or os.environ.get("OPENAI_API_KEY", "dummy"),
-        temperature=temperature,
-        max_retries=0,
-        max_tokens=512,
-    )
-    result = fallback_model.invoke(
-        [SystemMessage(content=fallback_prompt), HumanMessage(content=fallback_input)],
-        {"callbacks": [handler] if handler else []},
-    )
-    return result
-
-def _build_fallback_plan(context: dict) -> dict:
-    banned_keywords = {str(k).lower() for k in (context.get("banned_keywords") or [])}
-    search_query = "balanced one-day meal plan"
-    results = nutrition_tools_module.recipe_semantic_search.invoke(
-        {"meal_query": search_query, "k": 5}
-    )
-    for meal in results:
-        name = str(meal.get("name", ""))
-        if any(bad in name.lower() for bad in banned_keywords):
-            continue
-        calories = float(meal.get("calories", 0))
-        carbs = float(meal.get("carbs", 0))
-        protein = float(meal.get("protein", 0))
-        fat = float(meal.get("fat", 0))
-        return {
-            "meals": [
-                {
-                    "name": name,
-                    "quantity": 1.0,
-                    "calories": calories,
-                    "proteins": protein,
-                    "carbs": carbs,
-                    "fats": fat,
-                    "sequence": 1,
-                }
-            ]
-        }
-    return {"meals": []}
-
 class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
 
     def __init__(
         self,
         trained_agents: Optional[str] = None,
         val_temperature: Optional[float] = None,
+        strict_failures: bool = False,
+        debug_messages: bool = False,
     ) -> None:
         super().__init__(trained_agents=trained_agents)
         self.val_temperature = val_temperature
+        self.strict_failures = strict_failures
+        self.debug_messages = debug_messages
 
     def rollout(
         self,
@@ -230,21 +194,9 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
             )
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error during agent invocation: {e}")
-            try:
-                fallback_result = _invoke_fallback_model(
-                    model_name=llm.model,
-                    endpoint=llm.get_base_url(rollout.rollout_id, rollout.attempt.attempt_id),
-                    api_key=os.environ.get("OPENAI_API_KEY", "dummy"),
-                    temperature=temp,
-                    full_input=full_input,
-                    handler=handler,
-                )
-                final_state = {"messages": [fallback_result]}
-            except Exception as fallback_error:
-                logger.exception(
-                    f"[Rollout {rollout.rollout_id}] Fallback model invocation failed: {fallback_error}"
-                )
-                return None
+            if self.strict_failures:
+                raise
+            return None
 
         # 6. Extract Result
         # We look for the last tool call to 'return_final_answer_tool' or the final message
@@ -284,7 +236,12 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
                     final_payload = None
 
         if final_payload is None:
-            final_payload = _build_fallback_plan(context)
+            logger.warning(f"[Rollout {rollout.rollout_id}] No final payload parsed.")
+            if self.debug_messages:
+                _log_message_tail(rollout.rollout_id, messages)
+            if self.strict_failures:
+                raise RuntimeError("No final payload parsed from agent output.")
+            return None
 
         # 7. Calculate Reward
         # Extract targets from context

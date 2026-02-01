@@ -156,7 +156,13 @@ def config_train_llama() -> Dict[str, Any]:
     return config
 
 
-def train(config: Dict[str, Any], active_agent: Optional[str], agent_type: str) -> None:
+def train(
+    config: Dict[str, Any],
+    active_agent: Optional[str],
+    agent_type: str,
+    strict_failures: bool,
+    debug_agent: bool,
+) -> None:
     """Train the SQL agent with the given configuration."""
 
     if agent_type == "deterministic":
@@ -164,7 +170,7 @@ def train(config: Dict[str, Any], active_agent: Optional[str], agent_type: str) 
     elif agent_type == "deterministic-llm":
         agent = LitNutritionAgentDeterministic(optimize_with_llm=True)
     else:
-        agent = LitNutritionAgent()
+        agent = LitNutritionAgent(strict_failures=strict_failures, debug_messages=debug_agent)
     algorithm = agl.VERL(config)
     trainer = agl.Trainer(n_runners=10, algorithm=algorithm, adapter={"agent_match": active_agent})
     print("Adapter agent match acknowledged:", trainer.adapter.agent_match)  # type: ignore
@@ -201,6 +207,16 @@ def main() -> None:
         default="llm",
         help="Agent implementation to use for rollout behavior.",
     )
+    parser.add_argument(
+        "--strict-failures",
+        action="store_true",
+        help="Raise on agent failures instead of skipping rollouts.",
+    )
+    parser.add_argument(
+        "--debug-agent",
+        action="store_true",
+        help="Log tail messages when parsing fails.",
+    )
 
     args = parser.parse_args()
 
@@ -219,7 +235,7 @@ def main() -> None:
     print(f"Starting training with '{args.config}' configuration...")
     print(f"Active agent: {active_agent}")
 
-    train(config, active_agent, args.agent_type)
+    train(config, active_agent, args.agent_type, args.strict_failures, args.debug_agent)
 
 
 if __name__ == "__main__":
