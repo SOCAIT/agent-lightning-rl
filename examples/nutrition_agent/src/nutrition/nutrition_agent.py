@@ -55,6 +55,8 @@ Rules:
 - Final response MUST be a single call to return_final_answer_tool with the JSON plan.
 - Tool call arguments MUST be valid JSON. The tool expects an object, not a JSON string.
 - Call format: return_final_answer_tool({{"answer": {{"meals": [ ... ]}}}})
+- JSON schema: {{"meals":[{{"name":str,"quantity":number,"calories":number,"proteins":number,"carbs":number,"fats":number,"sequence":int}}]}}
+- Do NOT nest meals under "items" or change key names (e.g. "protein" -> "proteins").
 """
 
 class AgentState(TypedDict):

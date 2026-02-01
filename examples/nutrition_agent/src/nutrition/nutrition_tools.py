@@ -132,6 +132,63 @@ def log_tool(tool_name):
                     raise
             return wrapper
         return decorator
+
+def _normalize_meal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
+    meals: List[Dict[str, Any]] | None = None
+    if isinstance(payload.get("meals"), list):
+        meals = payload.get("meals")
+    elif isinstance(payload.get("daily_plan"), list):
+        meals = payload.get("daily_plan")
+    elif isinstance(payload.get("dailyPlan"), list):
+        meals = payload.get("dailyPlan")
+    elif isinstance(payload.get("dailyMealPlans"), list) and payload.get("dailyMealPlans"):
+        first_day = payload.get("dailyMealPlans")[0]
+        if isinstance(first_day, dict):
+            meals = first_day.get("meals")
+
+    if not meals:
+        return payload
+
+    normalized: List[Dict[str, Any]] = []
+    seq = 1
+
+    for meal in meals:
+        if not isinstance(meal, dict):
+            continue
+        items = meal.get("items")
+        if isinstance(items, list) and items:
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                normalized.append(
+                    {
+                        "name": item.get("name") or item.get("meal") or item.get("meal_name") or "",
+                        "quantity": float(item.get("quantity", 1)),
+                        "calories": float(item.get("calories", 0)),
+                        "proteins": float(item.get("proteins", item.get("protein", 0))),
+                        "carbs": float(item.get("carbs", item.get("carb", 0))),
+                        "fats": float(item.get("fats", item.get("fat", 0))),
+                        "sequence": int(item.get("sequence", seq)),
+                    }
+                )
+                seq += 1
+            continue
+
+        normalized.append(
+            {
+                "name": meal.get("name") or meal.get("meal") or meal.get("meal_name") or "",
+                "quantity": float(meal.get("quantity", 1)),
+                "calories": float(meal.get("calories", 0)),
+                "proteins": float(meal.get("proteins", meal.get("protein", 0))),
+                "carbs": float(meal.get("carbs", meal.get("carb", 0))),
+                "fats": float(meal.get("fats", meal.get("fat", 0))),
+                "sequence": int(meal.get("sequence", seq)),
+            }
+        )
+        seq += 1
+
+    payload["meals"] = normalized
+    return payload
 @tool
 @log_tool("recipe_semantic_search")
 def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
@@ -159,6 +216,8 @@ def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
 def return_final_answer_tool(answer: Dict[str, Any]) -> dict:
         """Return the final answer (daily meal plan) in the correct format."""
         payload = get_payload(answer)  # Normalize in case of schema drift
+        if isinstance(payload, dict):
+            payload = _normalize_meal_plan(payload)
         final_answer = FinalAnswer(answer=payload)
         return final_answer.model_dump()
 
