@@ -21,25 +21,27 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 16,  # Reduced to be more conservative with memory
-        "max_prompt_length": 8192,  # Reduced for stability: supports multi-turn tool calls (6 turns × ~1.3K tokens/turn)
-        "max_response_length": 2048,  # Reduced for stability: sufficient for complete plan generation
+        "train_batch_size": 16,  # Conservative for stability
+        "max_prompt_length": 6144,  # Conservative: supports multi-turn tool calls (6 turns × ~1K tokens/turn)
+        "max_response_length": 2048,  # Sufficient for complete plan generation
         "truncation": "error",
     },
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 2,  # Reduced to 2 parallel rollouts to give vLLM more breathing room
-            "log_prob_micro_batch_size_per_gpu": 2,  # Reduced to 2
+            "n": 2,  # Conservative parallel rollouts
+            "log_prob_micro_batch_size_per_gpu": 2,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.5,  # Reduced to 50% (~70GB for vLLM) to prevent crashes
-            "max_model_len": 10240,  # Conservative max context length for stability
+            "gpu_memory_utilization": 0.5,  # 50% (~70GB for vLLM)
+            "max_model_len": 8192,  # Reduced to 8K for stability (prompt + response)
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 32,  # Limit concurrent sequences
+                    "max_num_seqs": 16,  # Further reduced concurrent sequences
+                    "max_num_batched_tokens": 8192,  # Limit batched tokens to prevent KV cache issues
+                    "enable_chunked_prefill": False,  # Disable chunked prefill (can cause issues)
                 }
             },
         },
