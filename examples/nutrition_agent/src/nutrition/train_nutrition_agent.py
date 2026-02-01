@@ -21,7 +21,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 16,  # Reduced from 32 to fit GPU memory with large sequence lengths
+        "train_batch_size": 8,  # Further reduced from 16 to fit GPU memory with large sequence lengths
         "max_prompt_length": 12288,  # Increased for Qwen 7B: supports multi-turn tool calls (6 turns × ~2K tokens/turn)
         "max_response_length": 4096,  # Increased for Qwen 7B: ensures complete plan generation with tool calls
         "truncation": "error",
@@ -29,11 +29,11 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 4,
-            "log_prob_micro_batch_size_per_gpu": 4,
+            "n": 2,  # Reduced from 4 to save memory (fewer parallel rollouts)
+            "log_prob_micro_batch_size_per_gpu": 2,  # Reduced from 4
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.6,  # Reduced from 0.8 to fit available GPU memory
+            "gpu_memory_utilization": 0.5,  # Further reduced from 0.6 to leave more room for optimizer states
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
@@ -42,8 +42,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 16,  # Reduced from 32 to match train_batch_size
-            "ppo_micro_batch_size_per_gpu": 4,
+            "ppo_mini_batch_size": 8,  # Further reduced from 16 to save memory
+            "ppo_micro_batch_size_per_gpu": 2,  # Reduced from 4
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
@@ -56,7 +56,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 8,
+            "log_prob_micro_batch_size_per_gpu": 4,  # Reduced from 8
             "fsdp_config": {"param_offload": True},
         },
         "model": {
