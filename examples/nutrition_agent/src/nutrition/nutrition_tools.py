@@ -156,10 +156,9 @@ def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
 
 @tool
 @log_tool("return_final_answer_tool")
-def return_final_answer_tool(answer: str) -> dict:
-        """Return the final answer (daily meal plan) in the correct format """
-        # nonlocal final_answer
-        payload = get_payload(answer)          # <-- normalize here
+def return_final_answer_tool(answer: Dict[str, Any]) -> dict:
+        """Return the final answer (daily meal plan) in the correct format."""
+        payload = get_payload(answer)  # Normalize in case of schema drift
         final_answer = FinalAnswer(answer=payload)
         return final_answer.model_dump()
 

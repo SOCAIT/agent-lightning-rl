@@ -53,6 +53,8 @@ Rules:
 - Meal names MUST come from recipe_semantic_search results.
 - Macros must be based on tool results and scaled by quantity (serving multiplier).
 - Final response MUST be a single call to return_final_answer_tool with the JSON plan.
+- Tool call arguments MUST be valid JSON. The tool expects an object, not a JSON string.
+- Call format: return_final_answer_tool({"answer": {"meals": [ ... ]}})
 """
 
 class AgentState(TypedDict):
