@@ -62,7 +62,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen3-4B-Instruct-2507",  # Updated to 7B model
+            "path": "Qwen/Qwen2.5-3B-Instruct",  # Updated to 7B model
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
@@ -104,7 +104,7 @@ def config_train_fast() -> Dict[str, Any]:
 
     config = deepcopy(RL_TRAINING_CONFIG)
     config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-    config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-1.5B-Instruct"
+    config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-3B-Instruct"
     config["data"]["val_files"] = "data/fitness_scenarios_val.parquet"
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 1
