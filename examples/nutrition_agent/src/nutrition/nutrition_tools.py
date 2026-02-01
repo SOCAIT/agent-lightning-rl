@@ -155,6 +155,8 @@ def _normalize_meal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
     for meal in meals:
         if not isinstance(meal, dict):
             continue
+        if isinstance(meal.get("meal"), dict):
+            meal = meal.get("meal")
         items = meal.get("items")
         if isinstance(items, list) and items:
             for item in items:
@@ -193,6 +195,8 @@ def _normalize_meal_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
 @log_tool("recipe_semantic_search")
 def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
       """Search the recipe index for the most similar recipes to the query."""
+      # Hard cap to keep tool output small for context limits
+      k = min(max(int(k), 1), 3)
       # Search the dense index
       results = recipe_index.search(
           namespace="syntrafit",
@@ -205,10 +209,22 @@ def recipe_semantic_search(meal_query: str, k: int = 5) -> str:
       )
 
       results = extract_meal_names(results)
+      # Trim verbose fields defensively
+      trimmed = []
+      for item in results[:k]:
+          trimmed.append(
+              {
+                  "name": str(item.get("name", ""))[:80],
+                  "calories": float(item.get("calories", 0)),
+                  "carbs": float(item.get("carbs", 0)),
+                  "protein": float(item.get("protein", 0)),
+                  "fat": float(item.get("fat", 0)),
+              }
+          )
 
-      print(results)
+      print(trimmed)
 
-      return results
+      return trimmed
 
 
 @tool
