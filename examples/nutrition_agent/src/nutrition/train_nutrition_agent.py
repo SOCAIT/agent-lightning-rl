@@ -21,7 +21,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 32,
+        "train_batch_size": 16,  # Reduced from 32 to fit GPU memory with large sequence lengths
         "max_prompt_length": 12288,  # Increased for Qwen 7B: supports multi-turn tool calls (6 turns × ~2K tokens/turn)
         "max_response_length": 4096,  # Increased for Qwen 7B: ensures complete plan generation with tool calls
         "truncation": "error",
@@ -33,7 +33,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "log_prob_micro_batch_size_per_gpu": 4,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.8,
+            "gpu_memory_utilization": 0.6,  # Reduced from 0.8 to fit available GPU memory
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
@@ -42,7 +42,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 32,
+            "ppo_mini_batch_size": 16,  # Reduced from 32 to match train_batch_size
             "ppo_micro_batch_size_per_gpu": 4,
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
