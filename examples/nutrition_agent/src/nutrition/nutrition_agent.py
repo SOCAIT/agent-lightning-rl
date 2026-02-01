@@ -35,8 +35,8 @@ from src.nutrition.data_utils import Scenario
 agl.setup_logging(apply_to=[__name__])
 logger = logging.getLogger(__name__)
 
-# MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
-MODEL_NAME = "Qwen/Qwen3-4B-Instruct-2507"
+MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
+#MODEL_NAME = "Qwen/Qwen3-4B-Instruct-2507"
 MAX_TURNS = 6
 MAX_CONTEXT_CHARS = 400
 MAX_INPUT_CHARS = 800
