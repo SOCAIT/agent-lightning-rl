@@ -48,6 +48,8 @@ def _extract_first_json_segment(s: str) -> str | None:
 
 def get_payload(obj):
     if hasattr(obj, "answer"): obj = obj.answer
+    if isinstance(obj, dict) and "answer" in obj and isinstance(obj.get("answer"), (dict, list)):
+        obj = obj.get("answer")
     if isinstance(obj, str):
         try: obj = json.loads(obj)
         except:
