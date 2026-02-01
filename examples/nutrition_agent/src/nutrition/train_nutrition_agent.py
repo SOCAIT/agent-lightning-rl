@@ -22,8 +22,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 32,
-        "max_prompt_length": 4096,
-        "max_response_length": 2048,
+        "max_prompt_length": 12288,  # Increased for Qwen 7B: supports multi-turn tool calls (6 turns × ~2K tokens/turn)
+        "max_response_length": 4096,  # Increased for Qwen 7B: ensures complete plan generation with tool calls
         "truncation": "error",
     },
     "actor_rollout_ref": {
@@ -60,7 +60,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-1.5B-Instruct",
+            "path": "Qwen/Qwen2.5-7B-Instruct",  # Updated to 7B model
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },

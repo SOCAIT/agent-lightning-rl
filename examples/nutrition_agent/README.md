@@ -29,14 +29,40 @@ This example demonstrates how to train a nutrition agent using `agentlightning`.
 Run the training script from this directory:
 
 ```bash
-python src/nutrition/train_nutrition_agent.py fast
+python src/nutrition/train_nutrition_agent.py qwen
 ```
 
-Arguments:
-- `fast`: Fast training run for testing.
-- `qwen`: Configuration for Qwen-2.5B.
+### Configuration Options:
+
+- `qwen`: **Recommended** - Configuration for Qwen-2.5-7B-Instruct with optimized sequence lengths:
+  - Model: `Qwen/Qwen2.5-7B-Instruct`
+  - `max_prompt_length`: 12288 tokens (supports multi-turn tool calls)
+  - `max_response_length`: 4096 tokens (ensures complete plan generation)
+- `fast`: Fast training run for testing (uses 1.5B model, 1 epoch, minimal steps).
 - `llama`: Configuration for LLaMA-3.2-1B.
 - `npu`: Configuration for NPU training.
+
+### Optional Arguments:
+
+- `--agent-type`: Choose agent implementation
+  - `llm` (default) - Standard LLM agent with tool calling
+  - `deterministic` - Deterministic agent
+  - `deterministic-llm` - Deterministic agent with LLM optimization
+
+- `--active-agent`: Override the active agent name (default: auto-generated)
+
+### Example Commands:
+
+```bash
+# Standard training with Qwen 7B (recommended)
+python src/nutrition/train_nutrition_agent.py qwen
+
+# Training with deterministic agent
+python src/nutrition/train_nutrition_agent.py qwen --agent-type deterministic
+
+# Fast test run
+python src/nutrition/train_nutrition_agent.py fast
+```
 
 ## Directory Structure
 
