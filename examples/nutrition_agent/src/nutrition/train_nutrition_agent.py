@@ -22,61 +22,61 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 16,  # Conservative for stability
-        "max_prompt_length": 2048,  # Reduced to leave room for response
+        "max_prompt_length": 4096,  # Room for multi-turn tool calls
         "max_response_length": 2048,  # Sufficient for meal plans
-        "truncation": "left",  # Truncate from left instead of error (safer)
+        "truncation": "left",  # Truncate from left if needed (safer than error)
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 1,
-            "n": 2,  # Keep conservative - more stable
-            "log_prob_micro_batch_size_per_gpu": 2,  # Keep small to avoid OOM spikes
+            "tensor_model_parallel_size": 2,  # Split vLLM across 2 GPUs
+            "n": 4,  # More parallel rollouts with 2 GPUs
+            "log_prob_micro_batch_size_per_gpu": 4,  # Can increase with 2 GPUs
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.45,  # CONSERVATIVE: leave headroom for training
-            "max_model_len": 4096,  # Reduced: must fit prompt (2K) + response (2K)
+            "gpu_memory_utilization": 0.5,  # 50% per GPU for vLLM (~70GB each)
+            "max_model_len": 8192,  # 14B-Instruct supports 32K, 8K is safe
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 8,  # REDUCED: prevents KV cache explosion
-                    "max_num_batched_tokens": 4096,  # Match max_model_len
+                    "max_num_seqs": 16,  # Good for 2x H100
+                    "max_num_batched_tokens": 8192,
                     "enable_chunked_prefill": False,
-                    "enforce_eager": True,  # Disable CUDA graphs - more stable
+                    "enforce_eager": False,  # Can enable CUDA graphs with 2 GPUs
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 8,  # REDUCED: smaller batches = less peak memory
-            "ppo_micro_batch_size_per_gpu": 2,  # REDUCED: safer gradient accumulation
-            "optim": {"lr": 5e-7},  # Slightly lower LR for larger model
+            "ppo_mini_batch_size": 16,
+            "ppo_micro_batch_size_per_gpu": 4,  # Per GPU
+            "optim": {"lr": 1e-6},
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
             "entropy_coeff": 0,
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": True,  # Offload params to CPU when not in use
-                "optimizer_offload": True,  # Offload optimizer states to CPU
+                "param_offload": False,  # No need to offload with 2x H100
+                "optimizer_offload": False,  # Keep on GPU for speed
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 4,  # REDUCED for 14B
-            "fsdp_config": {"param_offload": True},
+            "log_prob_micro_batch_size_per_gpu": 8,
+            "fsdp_config": {"param_offload": False},  # No offload needed
         },
         "model": {
-            "path": "Qwen/Qwen2.5-14B-Instruct",  # 14B for better math + tool calling
+            "path": "Qwen/Qwen2.5-14B-Instruct",  # 14B works great with 2x H100
             "use_remove_padding": True,
-            "enable_gradient_checkpointing": True,  # Essential for memory
+            "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
-        "n_gpus_per_node": 1,
+        "n_gpus_per_node": 2,  # Use both H100s
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b",
+        "experiment_name": "nutrition_14b_2gpu",
         "nnodes": 1,
         "test_freq": 16,
         "total_epochs": 5,

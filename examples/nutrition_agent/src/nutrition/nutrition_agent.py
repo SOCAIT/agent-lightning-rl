@@ -35,10 +35,10 @@ from src.nutrition.data_utils import Scenario
 agl.setup_logging(apply_to=[__name__])
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
+MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"  # 14B with 2x H100
 # Alternatives:
-# MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"  # Smaller, faster
-# MODEL_NAME = "Qwen/Qwen2.5-Math-7B-Instruct"  # Math-focused but worse at tool calling
+# MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"  # Smaller, faster, works on single GPU
+# MODEL_NAME = "Qwen/Qwen2.5-32B-Instruct"  # Even bigger if you have the VRAM
 MAX_TURNS = 3  # Reduced to prevent context overflow
 MAX_CONTEXT_CHARS = 300  # Reduced for shorter prompts
 MAX_INPUT_CHARS = 600  # Reduced for shorter prompts
