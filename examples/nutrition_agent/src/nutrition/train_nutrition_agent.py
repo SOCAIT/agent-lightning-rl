@@ -22,8 +22,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 16,  # Conservative for stability
-        "max_prompt_length": 6144,  # Conservative: supports multi-turn tool calls (6 turns × ~1K tokens/turn)
-        "max_response_length": 2048,  # Sufficient for complete plan generation
+        "max_prompt_length": 2048,  # Reduced for Math model (4K context limit)
+        "max_response_length": 1536,  # Reduced: prompt + response must fit in 4K
         "truncation": "error",
     },
     "actor_rollout_ref": {
@@ -34,13 +34,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
             "gpu_memory_utilization": 0.5,  # 50% (~70GB for vLLM)
-            "max_model_len": 8192,  # Reduced to 8K for stability (prompt + response)
+            "max_model_len": 4096,  # Math model only supports 4K context
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
                     "max_num_seqs": 16,  # Further reduced concurrent sequences
-                    "max_num_batched_tokens": 8192,  # Limit batched tokens to prevent KV cache issues
+                    "max_num_batched_tokens": 4096,  # Must match max_model_len for Math model
                     "enable_chunked_prefill": False,  # Disable chunked prefill (can cause issues)
                 }
             },
@@ -64,7 +64,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-Math-7B-Instruct",  # Updated to 7B model
+            "path": "Qwen/Qwen2.5-Math-7B-Instruct",  # Math model for better arithmetic
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
