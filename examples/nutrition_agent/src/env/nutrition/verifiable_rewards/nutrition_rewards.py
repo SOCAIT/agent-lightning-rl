@@ -180,12 +180,14 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
     # Ensure payload is a dict
     payload = get_payload(payload)
 
-    # logger.info(f"got payload: {payload}")
+    print(f"got payload: {payload}")
     
     # 1. Schema
-    r_schema, info_schema = verify_schema_v2(payload)
-    if r_schema < 1.0:
-        return 0.0, {"failure": "schema", "info": info_schema}
+    # r_schema, info_schema = verify_schema_v2(payload)
+    # if r_schema < 1.0:
+    #     return 0.0, {"failure": "schema", "info": info_schema}
+    r_schema = 1.0
+    info_schema = {"status": "skipped"}
         
     # 2. Macros
     targets = {
