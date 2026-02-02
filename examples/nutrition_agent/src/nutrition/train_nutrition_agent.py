@@ -21,34 +21,34 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 16,  # Conservative for stability
-        "max_prompt_length": 4096,  # Room for multi-turn tool calls
-        "max_response_length": 2048,  # Sufficient for meal plans
-        "truncation": "left",  # Truncate from left if needed (safer than error)
+        "train_batch_size": 8,  # Smaller batch for stability
+        "max_prompt_length": 2048,  # Conservative prompt length
+        "max_response_length": 1024,  # Conservative response length
+        "truncation": "left",  # Truncate from left if needed
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 1,  # NO TP - each GPU runs its own vLLM (simpler)
-            "n": 2,  # Parallel rollouts
-            "log_prob_micro_batch_size_per_gpu": 4,
+            "tensor_model_parallel_size": 1,
+            "n": 1,  # Single rollout at a time (more stable)
+            "log_prob_micro_batch_size_per_gpu": 2,  # Smaller batches
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.4,  # 40% for vLLM (~56GB), rest for training
-            "max_model_len": 8192,
+            "gpu_memory_utilization": 0.4,
+            "max_model_len": 4096,  # Reduced context
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 16,
-                    "max_num_batched_tokens": 8192,
+                    "max_num_seqs": 8,  # Fewer concurrent sequences
+                    "max_num_batched_tokens": 4096,
                     "enable_chunked_prefill": False,
-                    "enforce_eager": True,  # Disable CUDA graphs to avoid conflicts
+                    "enforce_eager": True,
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 16,
-            "ppo_micro_batch_size_per_gpu": 4,
+            "ppo_mini_batch_size": 8,  # Smaller batch
+            "ppo_micro_batch_size_per_gpu": 2,  # Smaller micro batch
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
@@ -56,17 +56,17 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": False,  # No need with 2x H100
-                "optimizer_offload": False,
+                "param_offload": True,  # Enable offload for safety
+                "optimizer_offload": True,
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 8,
-            "fsdp_config": {"param_offload": False},
+            "log_prob_micro_batch_size_per_gpu": 4,  # Smaller
+            "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-14B-Instruct",
-            "use_remove_padding": True,
+            "path": "Qwen/Qwen2.5-7B-Instruct",  # Back to 7B for stability
+            "use_remove_padding": False,  # Disable remove_padding - might cause empty seq issues
             "enable_gradient_checkpointing": True,
         },
     },
@@ -76,7 +76,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_2gpu",
+        "experiment_name": "nutrition_7b_stable",
         "nnodes": 1,
         "test_freq": 16,
         "total_epochs": 5,
