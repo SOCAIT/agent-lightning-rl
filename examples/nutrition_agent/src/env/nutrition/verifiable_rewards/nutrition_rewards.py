@@ -86,8 +86,22 @@ def verify_schema_v2(payload: dict) -> Tuple[float, Dict]:
                 
     return 1.0, {"status": "valid"}
 
-# 2. Strict Macro Check (+/- 5%)
+# 2. GRADUAL Macro Check - gives partial credit for being close!
 def verify_macros_strict(payload: dict, targets: Dict[str, float], tolerance=0.05) -> Tuple[float, Dict]:
+    """
+    GRADUAL macro scoring - gives partial credit so model can learn incrementally.
+    
+    Instead of binary pass/fail, we score based on how close each macro is to target.
+    This ensures the model always has a gradient to learn from.
+    
+    Scoring per macro:
+    - Within tolerance (e.g., 5%): 1.0
+    - 2x tolerance (e.g., 10%): 0.7
+    - 3x tolerance (e.g., 15%): 0.4
+    - 4x+ tolerance (e.g., 20%+): 0.1 minimum (always some gradient)
+    
+    Final score is weighted average of individual macro scores.
+    """
     meals = payload.get("meals", [])
     if not meals: return 0.0, {"error": "no_meals"}
     
@@ -97,41 +111,69 @@ def verify_macros_strict(payload: dict, targets: Dict[str, float], tolerance=0.0
     total_fat = sum(float(m.get("fats", 0)) for m in meals)
     
     errors = {}
-    passed = True
+    macro_scores = {}
+    weights = {}
     
-    # Check Calories
-    if targets.get("calories"):
-        target = float(targets["calories"])
-        if target > 0:
-            err = abs(total_cals - target) / target
-            errors["calories"] = err
-            if err > tolerance: passed = False
-            
-    # Check Protein
-    if targets.get("protein"):
-        target = float(targets["protein"])
-        if target > 0:
-            err = abs(total_prot - target) / target
-            errors["protein"] = err
-            if err > tolerance: passed = False
-            
-    # Optional checks if targets exist
+    def _score_macro(actual: float, target: float, tol: float, name: str, weight: float) -> float:
+        """Score a single macro with gradual falloff."""
+        if target <= 0:
+            return 1.0  # No target = automatic pass
+        
+        err = abs(actual - target) / target
+        errors[name] = round(err, 4)
+        
+        # Gradual scoring based on error relative to tolerance
+        if err <= tol:
+            # Within tolerance: full score
+            score = 1.0
+        elif err <= tol * 2:
+            # 1-2x tolerance: linear falloff from 1.0 to 0.7
+            score = 1.0 - 0.3 * ((err - tol) / tol)
+        elif err <= tol * 3:
+            # 2-3x tolerance: linear falloff from 0.7 to 0.4
+            score = 0.7 - 0.3 * ((err - tol * 2) / tol)
+        elif err <= tol * 4:
+            # 3-4x tolerance: linear falloff from 0.4 to 0.1
+            score = 0.4 - 0.3 * ((err - tol * 3) / tol)
+        else:
+            # Beyond 4x tolerance: minimum score (preserves gradient)
+            score = 0.1
+        
+        macro_scores[name] = round(score, 3)
+        weights[name] = weight
+        return score
+    
+    # Score each macro with appropriate weights
+    # Calories and protein are most important (higher weights)
+    cal_score = _score_macro(total_cals, float(targets.get("calories", 0)), tolerance, "calories", 0.4)
+    prot_score = _score_macro(total_prot, float(targets.get("protein", 0)), tolerance, "protein", 0.4)
+    
+    # Carbs and fat are optional/less critical
+    carb_score = 1.0
+    fat_score = 1.0
     if targets.get("carbs"):
-        target = float(targets["carbs"])
-        if target > 0:
-            err = abs(total_carb - target) / target
-            errors["carbs"] = err
-            if err > tolerance and tolerance > 0.0: passed = False
-            
+        carb_score = _score_macro(total_carb, float(targets["carbs"]), tolerance * 1.5, "carbs", 0.1)
     if targets.get("fat"):
-        target = float(targets["fat"])
-        if target > 0:
-            err = abs(total_fat - target) / target
-            errors["fat"] = err
-            if err > tolerance and tolerance > 0.0: passed = False
-            
-    score = 1.0 if passed else 0.0
-    return score, {"totals": {"cal": total_cals, "prot": total_prot}, "errors": errors, "passed": passed}
+        fat_score = _score_macro(total_fat, float(targets["fat"]), tolerance * 1.5, "fat", 0.1)
+    
+    # Calculate weighted average
+    total_weight = sum(weights.values()) if weights else 1.0
+    if total_weight > 0:
+        weighted_sum = sum(macro_scores.get(k, 1.0) * w for k, w in weights.items())
+        final_score = weighted_sum / total_weight
+    else:
+        final_score = (cal_score + prot_score) / 2.0
+    
+    # Determine if "passed" (for backwards compatibility) - all within tolerance
+    passed = all(errors.get(k, 0) <= tolerance for k in ["calories", "protein"] if k in errors)
+    
+    return round(final_score, 3), {
+        "totals": {"cal": round(total_cals, 1), "prot": round(total_prot, 1), "carb": round(total_carb, 1), "fat": round(total_fat, 1)},
+        "errors": errors,
+        "macro_scores": macro_scores,
+        "passed": passed,
+        "gradual_score": round(final_score, 3)
+    }
 
 # 3. Variety Heuristic - Enhanced with protein source and meal type diversity
 PROTEIN_KEYWORDS = {

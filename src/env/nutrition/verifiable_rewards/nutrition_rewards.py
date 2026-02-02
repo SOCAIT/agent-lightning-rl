@@ -103,8 +103,22 @@ def verify_schema_v2(payload: dict) -> Tuple[float, Dict]:
                 
     return 1.0, {"status": "valid"}
 
-# 2. Strict Macro Check (+/- 5%)
+# 2. GRADUAL Macro Check - gives partial credit for being close!
 def verify_macros_strict(payload: dict, targets: Dict[str, float], tolerance=0.05) -> Tuple[float, Dict]:
+    """
+    GRADUAL macro scoring - gives partial credit so model can learn incrementally.
+    
+    Instead of binary pass/fail, we score based on how close each macro is to target.
+    This ensures the model always has a gradient to learn from.
+    
+    Scoring per macro:
+    - Within tolerance (e.g., 5%): 1.0
+    - 2x tolerance (e.g., 10%): 0.7
+    - 3x tolerance (e.g., 15%): 0.4
+    - 4x+ tolerance (e.g., 20%+): 0.1 minimum (always some gradient)
+    
+    Final score is weighted average of individual macro scores.
+    """
     meals = payload.get("meals", [])
     if not meals: return 0.0, {"error": "no_meals"}
     
@@ -114,59 +128,107 @@ def verify_macros_strict(payload: dict, targets: Dict[str, float], tolerance=0.0
     total_fat = sum(float(m.get("fats", 0)) for m in meals)
     
     errors = {}
-    passed = True
+    macro_scores = {}
+    weights = {}
     
-    # Check Calories
-    if targets.get("calories"):
-        target = float(targets["calories"])
-        if target > 0:
-            err = abs(total_cals - target) / target
-            errors["calories"] = err
-            if err > tolerance: passed = False
-            
-    # Check Protein
-    if targets.get("protein"):
-        target = float(targets["protein"])
-        if target > 0:
-            err = abs(total_prot - target) / target
-            errors["protein"] = err
-            if err > tolerance: passed = False
-            
-    # Optional checks if targets exist
+    def _score_macro(actual: float, target: float, tol: float, name: str, weight: float) -> float:
+        """Score a single macro with gradual falloff."""
+        if target <= 0:
+            return 1.0  # No target = automatic pass
+        
+        err = abs(actual - target) / target
+        errors[name] = round(err, 4)
+        
+        # Gradual scoring based on error relative to tolerance
+        if err <= tol:
+            # Within tolerance: full score
+            score = 1.0
+        elif err <= tol * 2:
+            # 1-2x tolerance: linear falloff from 1.0 to 0.7
+            score = 1.0 - 0.3 * ((err - tol) / tol)
+        elif err <= tol * 3:
+            # 2-3x tolerance: linear falloff from 0.7 to 0.4
+            score = 0.7 - 0.3 * ((err - tol * 2) / tol)
+        elif err <= tol * 4:
+            # 3-4x tolerance: linear falloff from 0.4 to 0.1
+            score = 0.4 - 0.3 * ((err - tol * 3) / tol)
+        else:
+            # Beyond 4x tolerance: minimum score (preserves gradient)
+            score = 0.1
+        
+        macro_scores[name] = round(score, 3)
+        weights[name] = weight
+        return score
+    
+    # Score each macro with appropriate weights
+    # Calories and protein are most important (higher weights)
+    cal_score = _score_macro(total_cals, float(targets.get("calories", 0)), tolerance, "calories", 0.4)
+    prot_score = _score_macro(total_prot, float(targets.get("protein", 0)), tolerance, "protein", 0.4)
+    
+    # Carbs and fat are optional/less critical
+    carb_score = 1.0
+    fat_score = 1.0
     if targets.get("carbs"):
-        target = float(targets["carbs"])
-        if target > 0:
-            err = abs(total_carb - target) / target
-            errors["carbs"] = err
-            if err > tolerance and tolerance > 0.0: passed = False
-            
+        carb_score = _score_macro(total_carb, float(targets["carbs"]), tolerance * 1.5, "carbs", 0.1)
     if targets.get("fat"):
-        target = float(targets["fat"])
-        if target > 0:
-            err = abs(total_fat - target) / target
-            errors["fat"] = err
-            if err > tolerance and tolerance > 0.0: passed = False
-            
-    score = 1.0 if passed else 0.0
-    return score, {"totals": {"cal": total_cals, "prot": total_prot}, "errors": errors, "passed": passed}
-
-# 3. Variety Heuristic
-def verify_variety_heuristic(payload: dict) -> Tuple[float, Dict]:
-    meals = payload.get("meals", [])
-    if not meals: return 0.0, {"reason": "no_meals"}
+        fat_score = _score_macro(total_fat, float(targets["fat"]), tolerance * 1.5, "fat", 0.1)
     
-    # Check number of meals (aim for 3+)
+    # Calculate weighted average
+    total_weight = sum(weights.values()) if weights else 1.0
+    if total_weight > 0:
+        weighted_sum = sum(macro_scores.get(k, 1.0) * w for k, w in weights.items())
+        final_score = weighted_sum / total_weight
+    else:
+        final_score = (cal_score + prot_score) / 2.0
+    
+    # Determine if "passed" (for backwards compatibility) - all within tolerance
+    passed = all(errors.get(k, 0) <= tolerance for k in ["calories", "protein"] if k in errors)
+    
+    return round(final_score, 3), {
+        "totals": {"cal": round(total_cals, 1), "prot": round(total_prot, 1), "carb": round(total_carb, 1), "fat": round(total_fat, 1)},
+        "errors": errors,
+        "macro_scores": macro_scores,
+        "passed": passed,
+        "gradual_score": round(final_score, 3)
+    }
+
+# 3. GRADUAL Variety Heuristic - gives partial credit
+def verify_variety_heuristic(payload: dict) -> Tuple[float, Dict]:
+    """
+    GRADUAL variety scoring - gives partial credit so model can learn incrementally.
+    
+    Scoring:
+    - 1 meal: 0.2
+    - 2 meals: 0.4
+    - 3+ meals: 0.6 base
+    - Unique names add up to +0.4 more
+    """
+    meals = payload.get("meals", [])
+    if not meals: 
+        return 0.0, {"reason": "no_meals"}
+    
     num_meals = len(meals)
-    if num_meals < 3:
-        return 0.0, {"reason": f"too_few_meals_{num_meals}"}
-        
-    # Check unique meal names (aim for 3+)
     names = [m.get("name", "").lower().strip() for m in meals]
-    unique_names = set(names)
-    if len(unique_names) < 3:
-        return 0.0, {"reason": f"low_variety_{len(unique_names)}_unique"}
-        
-    return 1.0, {"unique_meals": len(unique_names), "total_meals": num_meals}
+    unique_names = set(n for n in names if n)
+    
+    info = {
+        "total_meals": num_meals,
+        "unique_meals": len(unique_names),
+    }
+    
+    # Gradual scoring for number of meals (up to 0.5)
+    meal_score = min(num_meals / 4.0, 1.0) * 0.5
+    
+    # Gradual scoring for unique names (up to 0.5)
+    name_score = min(len(unique_names) / 3.0, 1.0) * 0.5
+    
+    final_score = meal_score + name_score
+    
+    info["meal_score"] = round(meal_score, 3)
+    info["name_score"] = round(name_score, 3)
+    info["final_variety_score"] = round(final_score, 3)
+    
+    return round(final_score, 3), info
 
 # 4. LLM Variety Judge
 class VarietyJudgeResponse(BaseModel):
@@ -193,7 +255,13 @@ def llm_variety_judge(scenario_text, plan_json):
         return {"score": 0.5, "reason": "judge_error"}
 
 # Main Reward Wrapper
-def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
+def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None, skip_llm_judge: bool = True):
+    """
+    Calculate combined reward with GRADUAL macro scoring.
+    
+    Now that macros use gradual scoring, the reward function provides
+    continuous feedback for the model to learn from.
+    """
     # Ensure payload is a dict
     payload = get_payload(payload)
     
@@ -202,7 +270,7 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
     if r_schema < 1.0:
         return 0.0, {"failure": "schema", "info": info_schema}
         
-    # 2. Macros
+    # 2. Macros (NOW GRADUAL!)
     targets = {
         "calories": scenario_data.daily_cal_target,
         "protein": scenario_data.daily_prot_target,
@@ -214,40 +282,37 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
     # 3. Variety Heuristic
     r_variety_h, info_variety = verify_variety_heuristic(payload)
     
-    # 4. LLM Judge (Only if basic checks pass to save cost/time)
+    # 4. LLM Judge (skip by default for training speed)
     r_variety_llm = 0.0
-    if r_macro > 0.0 and r_variety_h > 0.0:
+    if not skip_llm_judge and r_macro > 0.3 and r_variety_h > 0.3:
          judge_res = llm_variety_judge(scenario_data.question, payload)
          r_variety_llm = judge_res.get("score", 0.0)
          info_variety["llm_reason"] = judge_res.get("reason")
-    else:
-        # Penalize if basic variety check fails
-        pass
+    elif skip_llm_judge:
+        # Use variety heuristic as proxy for LLM judge
+        r_variety_llm = r_variety_h
+        info_variety["llm_reason"] = "skipped_using_heuristic"
 
-    # Weighted Sum
-    # Macro accuracy is paramount -> 0.4
-    # Schema is a gate (already handled, if 0 return 0)
-    # Variety Heuristic -> 0.3
-    # LLM Variety -> 0.3
+    # ========== GRADUAL WEIGHTED SCORING ==========
+    # Now that r_macro is gradual (0.1 to 1.0), we can do proper weighted sum
+    # 
+    # Weights:
+    # - Macro accuracy: 50% (most important for nutrition)
+    # - Variety heuristic: 30%
+    # - LLM variety proxy: 20%
     
-    # If macros fail, score is low
-    if r_macro == 0.0:
-        final_score = 0.1 # participation award
-    else:
-        # Base score from macros
-        final_score = 0.4 
-        # Add variety
-        final_score += (0.3 * r_variety_h)
-        # Add LLM score
-        final_score += (0.3 * r_variety_llm)
+    final_score = (0.5 * r_macro) + (0.3 * r_variety_h) + (0.2 * r_variety_llm)
+    
+    # Ensure minimum score for valid schema (preserves gradient)
+    final_score = max(final_score, 0.05)
         
     info = {
         "r_schema": r_schema,
-        "r_macro": r_macro,
-        "r_variety_h": r_variety_h,
-        "r_variety_llm": r_variety_llm,
+        "r_macro": round(r_macro, 3),
+        "r_variety_h": round(r_variety_h, 3),
+        "r_variety_llm": round(r_variety_llm, 3),
         "macro_info": info_macro,
         "variety_info": info_variety
     }
     
-    return final_score, info
+    return round(final_score, 3), info
