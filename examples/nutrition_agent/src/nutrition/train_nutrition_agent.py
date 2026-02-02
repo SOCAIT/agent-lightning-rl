@@ -28,27 +28,27 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 2,  # Split vLLM across 2 GPUs
-            "n": 4,  # More parallel rollouts with 2 GPUs
-            "log_prob_micro_batch_size_per_gpu": 4,  # Can increase with 2 GPUs
+            "tensor_model_parallel_size": 1,  # NO TP - each GPU runs its own vLLM (simpler)
+            "n": 2,  # Parallel rollouts
+            "log_prob_micro_batch_size_per_gpu": 4,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.5,  # 50% per GPU for vLLM (~70GB each)
-            "max_model_len": 8192,  # 14B-Instruct supports 32K, 8K is safe
+            "gpu_memory_utilization": 0.4,  # 40% for vLLM (~56GB), rest for training
+            "max_model_len": 8192,
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 16,  # Good for 2x H100
+                    "max_num_seqs": 16,
                     "max_num_batched_tokens": 8192,
                     "enable_chunked_prefill": False,
-                    "enforce_eager": False,  # Can enable CUDA graphs with 2 GPUs
+                    "enforce_eager": True,  # Disable CUDA graphs to avoid conflicts
                 }
             },
         },
         "actor": {
             "ppo_mini_batch_size": 16,
-            "ppo_micro_batch_size_per_gpu": 4,  # Per GPU
+            "ppo_micro_batch_size_per_gpu": 4,
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
@@ -56,22 +56,22 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": False,  # No need to offload with 2x H100
-                "optimizer_offload": False,  # Keep on GPU for speed
+                "param_offload": False,  # No need with 2x H100
+                "optimizer_offload": False,
             },
         },
         "ref": {
             "log_prob_micro_batch_size_per_gpu": 8,
-            "fsdp_config": {"param_offload": False},  # No offload needed
+            "fsdp_config": {"param_offload": False},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-14B-Instruct",  # 14B works great with 2x H100
+            "path": "Qwen/Qwen2.5-14B-Instruct",
             "use_remove_padding": True,
             "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
-        "n_gpus_per_node": 2,  # Use both H100s
+        "n_gpus_per_node": 2,  # FSDP shards across both GPUs
         "val_before_train": True,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
