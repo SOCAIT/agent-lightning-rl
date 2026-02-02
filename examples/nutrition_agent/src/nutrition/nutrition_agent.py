@@ -39,9 +39,9 @@ MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"  # 14B with 2x H100
 # Alternatives:
 # MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"  # Smaller, faster, works on single GPU
 # MODEL_NAME = "Qwen/Qwen2.5-32B-Instruct"  # Even bigger if you have the VRAM
-MAX_TURNS = 3  # Reduced to prevent context overflow
-MAX_CONTEXT_CHARS = 300  # Reduced for shorter prompts
-MAX_INPUT_CHARS = 600  # Reduced for shorter prompts
+MAX_TURNS = 6  # Allow more turns for tool calls: search → search → search → answer
+MAX_CONTEXT_CHARS = 400  # Context for user profile
+MAX_INPUT_CHARS = 800  # Full input length
 
 PLANNER_PROMPT = f"""
 You are a nutrition planner. Create a ONE-DAY meal plan that matches the user's macros and dietary restrictions.
