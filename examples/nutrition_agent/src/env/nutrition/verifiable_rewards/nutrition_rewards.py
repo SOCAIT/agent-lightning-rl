@@ -61,10 +61,12 @@ def get_payload(obj):
 
 # 1. Schema Check
 def verify_schema_v2(payload: dict) -> Tuple[float, Dict]:
+    print(f"DEBUG: verify_schema_v2 received payload keys: {list(payload.keys())}")
     if not isinstance(payload, dict):
         return 0.0, {"error": "payload_not_dict"}
     
     if "meals" not in payload:
+        print(f"DEBUG: verify_schema_v2 missing 'meals'. Payload: {str(payload)[:500]}")
         return 0.0, {"error": "missing_meals_key"}
         
     meals = payload["meals"]
@@ -177,6 +179,8 @@ def llm_variety_judge(scenario_text, plan_json):
 def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
     # Ensure payload is a dict
     payload = get_payload(payload)
+
+    # logger.info(f"got payload: {payload}")
     
     # 1. Schema
     r_schema, info_schema = verify_schema_v2(payload)

@@ -281,6 +281,13 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
             else:
                 return None
 
+        # Normalize payload aggressively before reward calculation
+        if isinstance(final_payload, dict):
+            try:
+                final_payload = nutrition_tools_module._normalize_meal_plan(final_payload)
+            except Exception as e:
+                logger.warning(f"[Rollout {rollout.rollout_id}] Normalization failed: {e}")
+
         # 7. Calculate Reward
         # Extract targets from context
         daily_cal_target = context.get("daily_cal_target", 2000)
@@ -306,6 +313,7 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
 
         # Calculate Combined Reward
         try:
+             logger.info(f"Combined reward v2: {final_payload}, {scenario_data}, {traj}")
              final_reward, info = combined_reward_v2(final_payload, scenario_data, traj)
         except Exception as e:
             logger.exception(f"[Rollout {rollout.rollout_id}] Error calculating reward: {e}")
