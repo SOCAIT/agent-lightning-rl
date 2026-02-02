@@ -22,7 +22,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 8,  # Smaller batch for stability
-        "max_prompt_length": 2048,  # Conservative prompt length
+        "max_prompt_length": 2048,  # Leave room for response
         "max_response_length": 1024,  # Conservative response length
         "truncation": "left",  # Truncate from left if needed
     },
@@ -33,13 +33,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "log_prob_micro_batch_size_per_gpu": 2,  # Smaller batches
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.4,
-            "max_model_len": 4096,  # Reduced context
+            "gpu_memory_utilization": 0.35,  # More headroom for training
+            "max_model_len": 8192,  # Give vLLM room so responses are never length 0
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 8,  # Fewer concurrent sequences
+                    "max_num_seqs": 4,  # Fewer concurrent sequences
                     "max_num_batched_tokens": 4096,
                     "enable_chunked_prefill": False,
                     "enforce_eager": True,
@@ -56,18 +56,18 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": True,  # Enable offload for safety
-                "optimizer_offload": True,
+                "param_offload": False,  # 2x H100 can keep on GPU
+                "optimizer_offload": False,
             },
         },
         "ref": {
             "log_prob_micro_batch_size_per_gpu": 4,  # Smaller
-            "fsdp_config": {"param_offload": True},
+            "fsdp_config": {"param_offload": False},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-7B-Instruct",  # Back to 7B for stability
-            "use_remove_padding": False,  # Disable remove_padding - might cause empty seq issues
-            "enable_gradient_checkpointing": True,
+            "path": "Qwen/Qwen2.5-14B-Instruct",  # 14B training
+            "use_remove_padding": False,  # Avoid empty sequence edge cases
+            "enable_gradient_checkpointing": False,  # Disable to avoid empty-seq issues
         },
     },
     "trainer": {
@@ -76,7 +76,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_7b_stable",
+        "experiment_name": "nutrition_14b_stable",
         "nnodes": 1,
         "test_freq": 16,
         "total_epochs": 5,

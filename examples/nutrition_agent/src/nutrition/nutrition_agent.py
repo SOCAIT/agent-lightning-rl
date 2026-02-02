@@ -35,9 +35,9 @@ from src.nutrition.data_utils import Scenario
 agl.setup_logging(apply_to=[__name__])
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"  # 7B for stability
+MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"  # 14B with 2x H100
 # Alternatives:
-# MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"  # Larger, needs stable multi-GPU setup
+# MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"  # Smaller, faster, single GPU
 # MODEL_NAME = "Qwen/Qwen2.5-32B-Instruct"  # Even bigger if you have the VRAM
 MAX_TURNS = 6  # Allow more turns for tool calls: search → search → search → answer
 MAX_CONTEXT_CHARS = 400  # Context for user profile
