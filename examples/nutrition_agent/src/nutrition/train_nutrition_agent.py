@@ -22,9 +22,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 16,  # Conservative for stability
-        "max_prompt_length": 4096,  # 14B-Instruct supports longer context
+        "max_prompt_length": 2048,  # Reduced to leave room for response
         "max_response_length": 2048,  # Sufficient for meal plans
-        "truncation": "error",
+        "truncation": "left",  # Truncate from left instead of error (safer)
     },
     "actor_rollout_ref": {
         "rollout": {
@@ -34,13 +34,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
             "gpu_memory_utilization": 0.45,  # CONSERVATIVE: leave headroom for training
-            "max_model_len": 8192,  # 14B supports 32K, but 8K is safer
+            "max_model_len": 4096,  # Reduced: must fit prompt (2K) + response (2K)
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
                     "max_num_seqs": 8,  # REDUCED: prevents KV cache explosion
-                    "max_num_batched_tokens": 8192,
+                    "max_num_batched_tokens": 4096,  # Match max_model_len
                     "enable_chunked_prefill": False,
                     "enforce_eager": True,  # Disable CUDA graphs - more stable
                 }

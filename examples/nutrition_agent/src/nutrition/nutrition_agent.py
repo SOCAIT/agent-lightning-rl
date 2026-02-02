@@ -39,9 +39,9 @@ MODEL_NAME = "Qwen/Qwen2.5-14B-Instruct"
 # Alternatives:
 # MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"  # Smaller, faster
 # MODEL_NAME = "Qwen/Qwen2.5-Math-7B-Instruct"  # Math-focused but worse at tool calling
-MAX_TURNS = 4
-MAX_CONTEXT_CHARS = 400
-MAX_INPUT_CHARS = 800
+MAX_TURNS = 3  # Reduced to prevent context overflow
+MAX_CONTEXT_CHARS = 300  # Reduced for shorter prompts
+MAX_INPUT_CHARS = 600  # Reduced for shorter prompts
 
 PLANNER_PROMPT = f"""
 You are a nutrition planner. Create a ONE-DAY meal plan that matches the user's macros and dietary restrictions.
