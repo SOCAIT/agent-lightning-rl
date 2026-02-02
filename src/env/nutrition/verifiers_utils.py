@@ -34,9 +34,25 @@ def _extract_first_json_segment(s: str) -> str | None:
 
 def get_payload(obj):
     if hasattr(obj, "answer"): obj = obj.answer
+    
     # Unwrap nested answer keys recursively
-    while isinstance(obj, dict) and "answer" in obj and isinstance(obj.get("answer"), (dict, list)):
-        obj = obj.get("answer")
+    # We loop until no more "answer" wrapper exists or it's not a dict
+    while isinstance(obj, dict) and "answer" in obj:
+        candidate = obj.get("answer")
+        if isinstance(candidate, (dict, list)):
+            obj = candidate
+        else:
+            # If "answer" is a string, try to parse it
+            if isinstance(candidate, str):
+                try:
+                    parsed = json.loads(candidate)
+                    obj = parsed
+                except:
+                    # If parse fails, maybe we just stop unwrapping
+                    break
+            else:
+                break
+
     if isinstance(obj, str):
         try: obj = json.loads(obj)
         except:
