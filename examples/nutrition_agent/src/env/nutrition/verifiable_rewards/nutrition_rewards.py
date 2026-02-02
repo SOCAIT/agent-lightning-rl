@@ -180,14 +180,23 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
     # Ensure payload is a dict
     payload = get_payload(payload)
 
-    print(f"got payload: {payload}")
+    # Force unwrap "answer" if present at top level (this is the key fix)
+    if isinstance(payload, dict) and "answer" in payload and isinstance(payload["answer"], dict):
+        # Check if inner has "meals"
+        if "meals" in payload["answer"]:
+            payload = payload["answer"]
+        # Or if it's just a wrapper
+        elif len(payload) == 1:
+             payload = payload["answer"]
+
+    # print(f"got payload: {payload}")
     
     # 1. Schema
-    # r_schema, info_schema = verify_schema_v2(payload)
-    # if r_schema < 1.0:
-    #     return 0.0, {"failure": "schema", "info": info_schema}
-    r_schema = 1.0
-    info_schema = {"status": "skipped"}
+    r_schema, info_schema = verify_schema_v2(payload)
+    if r_schema < 1.0:
+        return 0.0, {"failure": "schema", "info": info_schema}
+    # r_schema = 1.0
+    # info_schema = {"status": "skipped"}
         
     # 2. Macros
     targets = {
@@ -196,10 +205,20 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
         "carbs": scenario_data.daily_carb_target,
         "fat": scenario_data.daily_fat_target
     }
+    
+    # Try to unwrap payload once more just in case (the verify_schema bypass means we might still have nesting)
+    # if isinstance(payload, dict) and "meals" not in payload and "answer" in payload:
+    #      payload = payload["answer"]
+         
     r_macro, info_macro = verify_macros_strict(payload, targets, tolerance=0.05)
+    
+    # Debug macros
+    print(f"DEBUG: Macro check. Targets: {targets}")
+    print(f"DEBUG: Macro result: score={r_macro}, info={info_macro}")
     
     # 3. Variety Heuristic
     r_variety_h, info_variety = verify_variety_heuristic(payload)
+    print(f"DEBUG: Variety heuristic result: score={r_variety_h}, info={info_variety}")
     
     # 4. LLM Judge (Only if basic checks pass to save cost/time)
     r_variety_llm = 0.0
@@ -207,6 +226,7 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
          judge_res = llm_variety_judge(scenario_data.question, payload)
          r_variety_llm = judge_res.get("score", 0.0)
          info_variety["llm_reason"] = judge_res.get("reason")
+         print(f"DEBUG: LLM Judge result: score={r_variety_llm}, reason={info_variety['llm_reason']}")
     else:
         # Penalize if basic variety check fails
         pass
