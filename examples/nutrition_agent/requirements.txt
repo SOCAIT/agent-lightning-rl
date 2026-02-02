@@ -4,5 +4,9 @@ langchain-core
 langgraph
 pinecone
 pandas
+numpy
+scipy
 python-dotenv
-# tenacity
+pydantic
+litellm
+tenacity

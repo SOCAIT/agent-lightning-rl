@@ -133,23 +133,150 @@ def verify_macros_strict(payload: dict, targets: Dict[str, float], tolerance=0.0
     score = 1.0 if passed else 0.0
     return score, {"totals": {"cal": total_cals, "prot": total_prot}, "errors": errors, "passed": passed}
 
-# 3. Variety Heuristic
-def verify_variety_heuristic(payload: dict) -> Tuple[float, Dict]:
-    meals = payload.get("meals", [])
-    if not meals: return 0.0, {"reason": "no_meals"}
+# 3. Variety Heuristic - Enhanced with protein source and meal type diversity
+PROTEIN_KEYWORDS = {
+    "chicken": ["chicken", "poultry", "hen"],
+    "beef": ["beef", "steak", "burger", "brisket"],
+    "fish": ["salmon", "tuna", "fish", "cod", "tilapia", "shrimp", "seafood", "prawn", "trout", "mackerel"],
+    "plant": ["chickpea", "lentil", "tofu", "tempeh", "bean", "legume", "vegan", "vegetarian", "quinoa", "edamame"],
+    "pork": ["pork", "bacon", "ham", "sausage"],
+    "eggs": ["egg", "omelette", "frittata", "scramble"],
+    "dairy": ["cheese", "yogurt", "cottage", "paneer"],
+    "turkey": ["turkey"],
+}
+
+MEAL_TYPE_KEYWORDS = {
+    "breakfast": ["oats", "oatmeal", "pancake", "waffle", "eggs", "toast", "smoothie", 
+                  "cereal", "muesli", "granola", "yogurt", "breakfast", "morning"],
+    "lunch": ["sandwich", "wrap", "salad", "soup", "bowl", "burger", "lunch"],
+    "dinner": ["steak", "pasta", "stir-fry", "roast", "curry", "dinner", "rice", "noodle"],
+}
+
+
+def _detect_protein_source(name: str) -> str:
+    """Detect the primary protein source from a meal name."""
+    name_lower = name.lower()
+    for source, keywords in PROTEIN_KEYWORDS.items():
+        if any(kw in name_lower for kw in keywords):
+            return source
+    return "unknown"
+
+
+def _detect_meal_type(name: str) -> str:
+    """Detect the meal type from a meal name."""
+    name_lower = name.lower()
+    for meal_type, keywords in MEAL_TYPE_KEYWORDS.items():
+        if any(kw in name_lower for kw in keywords):
+            return meal_type
+    return "other"
+
+
+def verify_variety_heuristic(payload: dict, strict: bool = True) -> Tuple[float, Dict]:
+    """
+    GRADUAL variety scoring - gives partial credit so model can learn incrementally.
     
-    # Check number of meals (aim for 3+)
+    Evaluates:
+    1. Number of meals (partial credit from 1+, ideal 4+)
+    2. Unique meal names (partial credit from 1+, ideal 3+)
+    3. Protein source diversity (partial credit from 1+, ideal 3+)
+    4. Meal type diversity (bonus for spread)
+    
+    IMPORTANT: This is NOT a hard gate. The model gets partial credit for
+    partial variety so it can learn to improve incrementally.
+    
+    Args:
+        payload: The meal plan
+        strict: If True, uses stricter scoring curve
+        
+    Returns:
+        score: 0.0 to 1.0 based on variety quality (GRADUAL, not binary)
+        info: Details about variety assessment
+    """
+    meals = payload.get("meals", [])
+    if not meals: 
+        return 0.0, {"reason": "no_meals"}
+    
     num_meals = len(meals)
-    if num_meals < 3:
-        return 0.0, {"reason": f"too_few_meals_{num_meals}"}
-        
-    # Check unique meal names (aim for 3+)
+    
+    # Extract meal info
     names = [m.get("name", "").lower().strip() for m in meals]
-    unique_names = set(names)
-    if len(unique_names) < 3:
-        return 0.0, {"reason": f"low_variety_{len(unique_names)}_unique"}
+    unique_names = set(n for n in names if n)  # Filter empty names
+    
+    # Detect protein sources
+    protein_sources = [_detect_protein_source(name) for name in names]
+    unique_proteins = set(p for p in protein_sources if p != "unknown")
+    
+    # Detect meal types
+    meal_types = [_detect_meal_type(name) for name in names]
+    unique_types = set(t for t in meal_types if t != "other")
+    
+    info = {
+        "total_meals": num_meals,
+        "unique_meals": len(unique_names),
+        "unique_proteins": len(unique_proteins),
+        "protein_sources": list(unique_proteins),
+        "unique_meal_types": len(unique_types),
+        "meal_types": list(unique_types),
+    }
+    
+    # ========== GRADUAL SCORING ==========
+    # Each component contributes to the score proportionally
+    # This ensures the model always has a gradient to learn from
+    
+    score = 0.0
+    
+    # 1. Number of meals (0.25 weight)
+    # 1 meal = 0.05, 2 meals = 0.10, 3 meals = 0.18, 4+ meals = 0.25
+    meal_score = min(num_meals / 4.0, 1.0) * 0.25
+    score += meal_score
+    info["meal_score"] = round(meal_score, 3)
+    
+    # 2. Unique meal names (0.30 weight) - most important for variety
+    # 1 unique = 0.10, 2 unique = 0.20, 3+ unique = 0.30
+    name_score = min(len(unique_names) / 3.0, 1.0) * 0.30
+    score += name_score
+    info["name_score"] = round(name_score, 3)
+    
+    # 3. Protein source diversity (0.30 weight) - critical for nutrition variety
+    # 0 known = 0.05 (baseline), 1 source = 0.15, 2 sources = 0.25, 3+ sources = 0.30
+    if len(unique_proteins) == 0:
+        protein_score = 0.05  # Small baseline even with unknown proteins
+    else:
+        protein_score = min(len(unique_proteins) / 3.0, 1.0) * 0.30
+    score += protein_score
+    info["protein_score"] = round(protein_score, 3)
+    
+    # 4. Meal type diversity (0.15 weight) - bonus for breakfast/lunch/dinner spread
+    # 0 types = 0.0, 1 type = 0.08, 2+ types = 0.15
+    type_score = min(len(unique_types) / 2.0, 1.0) * 0.15
+    score += type_score
+    info["type_score"] = round(type_score, 3)
+    
+    # ========== STRICT MODE PENALTIES ==========
+    if strict:
+        # Apply a penalty multiplier if minimums not met (but don't zero out!)
+        penalty = 1.0
         
-    return 1.0, {"unique_meals": len(unique_names), "total_meals": num_meals}
+        if num_meals < 3:
+            penalty *= 0.7  # 30% penalty for too few meals
+            info["penalty_reason"] = info.get("penalty_reason", []) + [f"few_meals_{num_meals}"]
+        
+        if len(unique_names) < 3:
+            penalty *= 0.7  # 30% penalty for low name variety
+            info["penalty_reason"] = info.get("penalty_reason", []) + [f"few_unique_names_{len(unique_names)}"]
+        
+        if len(unique_proteins) < 2:
+            penalty *= 0.8  # 20% penalty for low protein variety
+            info["penalty_reason"] = info.get("penalty_reason", []) + [f"few_proteins_{len(unique_proteins)}"]
+        
+        score *= penalty
+        info["penalty_multiplier"] = round(penalty, 3)
+    
+    # Ensure score is in valid range
+    final_score = max(0.0, min(1.0, score))
+    info["final_variety_score"] = round(final_score, 3)
+    
+    return final_score, info
 
 # 4. LLM Variety Judge
 class VarietyJudgeResponse(BaseModel):
@@ -176,7 +303,29 @@ def llm_variety_judge(scenario_text, plan_json):
         return {"score": 0.5, "reason": "judge_error"}
 
 # Main Reward Wrapper
-def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
+def combined_reward_v2(
+    payload: dict, 
+    scenario_data: Scenario, 
+    traj=None, 
+    skip_llm_judge: bool = False,
+    verbose: bool = True,
+    strict_variety: bool = True,
+):
+    """
+    Calculate combined reward for a meal plan.
+    
+    Args:
+        payload: The meal plan payload
+        scenario_data: Scenario with targets and constraints
+        traj: Optional trajectory for provenance tracking
+        skip_llm_judge: If True, skip the LLM variety judge (faster for batch processing)
+        verbose: If True, print debug info
+        strict_variety: If True, requires protein source diversity and higher thresholds
+        
+    Returns:
+        final_score: Float between 0 and 1
+        info: Dict with component scores and details
+    """
     # Ensure payload is a dict
     payload = get_payload(payload)
 
@@ -188,15 +337,11 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
         # Or if it's just a wrapper
         elif len(payload) == 1:
              payload = payload["answer"]
-
-    # print(f"got payload: {payload}")
     
     # 1. Schema
     r_schema, info_schema = verify_schema_v2(payload)
     if r_schema < 1.0:
         return 0.0, {"failure": "schema", "info": info_schema}
-    # r_schema = 1.0
-    # info_schema = {"status": "skipped"}
         
     # 2. Macros
     targets = {
@@ -205,56 +350,71 @@ def combined_reward_v2(payload: dict, scenario_data: Scenario, traj=None):
         "carbs": scenario_data.daily_carb_target,
         "fat": scenario_data.daily_fat_target
     }
-    
-    # Try to unwrap payload once more just in case (the verify_schema bypass means we might still have nesting)
-    # if isinstance(payload, dict) and "meals" not in payload and "answer" in payload:
-    #      payload = payload["answer"]
          
     r_macro, info_macro = verify_macros_strict(payload, targets, tolerance=0.05)
     
-    # Debug macros
-    print(f"DEBUG: Macro check. Targets: {targets}")
-    print(f"DEBUG: Macro result: score={r_macro}, info={info_macro}")
+    if verbose:
+        print(f"DEBUG: Macro check. Targets: {targets}")
+        print(f"DEBUG: Macro result: score={r_macro}, info={info_macro}")
     
-    # 3. Variety Heuristic
-    r_variety_h, info_variety = verify_variety_heuristic(payload)
-    print(f"DEBUG: Variety heuristic result: score={r_variety_h}, info={info_variety}")
+    # 3. Variety Heuristic (with strict mode for protein diversity)
+    r_variety_h, info_variety = verify_variety_heuristic(payload, strict=strict_variety)
+    if verbose:
+        print(f"DEBUG: Variety heuristic result: score={r_variety_h}, info={info_variety}")
     
-    # 4. LLM Judge (Only if basic checks pass to save cost/time)
+    # 4. LLM Judge (Only if basic checks pass and not skipped)
     r_variety_llm = 0.0
-    if r_macro > 0.0 and r_variety_h > 0.0:
-         judge_res = llm_variety_judge(scenario_data.question, payload)
-         r_variety_llm = judge_res.get("score", 0.0)
-         info_variety["llm_reason"] = judge_res.get("reason")
-         print(f"DEBUG: LLM Judge result: score={r_variety_llm}, reason={info_variety['llm_reason']}")
-    else:
-        # Penalize if basic variety check fails
-        pass
+    if r_macro > 0.0 and r_variety_h > 0.0 and not skip_llm_judge:
+        judge_res = llm_variety_judge(scenario_data.question, payload)
+        r_variety_llm = judge_res.get("score", 0.0)
+        info_variety["llm_reason"] = judge_res.get("reason")
+        if verbose:
+            print(f"DEBUG: LLM Judge result: score={r_variety_llm}, reason={info_variety['llm_reason']}")
+    elif skip_llm_judge and r_macro > 0.0 and r_variety_h > 0.0:
+        # When skipping LLM judge, use the variety heuristic score as proxy
+        # The new heuristic already gives a quality-based score (0.4 to 1.0)
+        r_variety_llm = r_variety_h  # Use heuristic score as proxy
+        info_variety["llm_reason"] = "skipped_using_heuristic_score"
 
-    # Weighted Sum
-    # Macro accuracy is paramount -> 0.4
-    # Schema is a gate (already handled, if 0 return 0)
-    # Variety Heuristic -> 0.3
-    # LLM Variety -> 0.3
+    # ========== MULTIPLICATIVE SCORING ==========
+    # BOTH macros AND variety must be good to get a high score.
+    # If either is low, the overall score is low.
+    #
+    # Formula: final = (macro_score * variety_score) ^ 0.5 * scaling
+    # This is essentially a geometric mean - both must be high.
+    #
+    # Examples:
+    # - macro=1.0, variety=1.0 → 1.0 (perfect)
+    # - macro=1.0, variety=0.5 → ~0.71
+    # - macro=0.5, variety=1.0 → ~0.71  
+    # - macro=1.0, variety=0.2 → ~0.45
+    # - macro=0.5, variety=0.5 → 0.5
+    # - macro=0.0, variety=1.0 → 0.0
     
-    # If macros fail, score is low
-    if r_macro == 0.0:
-        final_score = 0.1 # participation award
-    else:
-        # Base score from macros
-        final_score = 0.4 
-        # Add variety
-        final_score += (0.3 * r_variety_h)
-        # Add LLM score
-        final_score += (0.3 * r_variety_llm)
-        
+    # Combine variety scores (heuristic + LLM proxy)
+    # Weight: 60% heuristic, 40% LLM/proxy
+    combined_variety = (0.6 * r_variety_h) + (0.4 * r_variety_llm)
+    
+    # Geometric mean of macro and variety - BOTH must be high
+    # Add small epsilon to avoid zero gradients at boundaries
+    epsilon = 0.01
+    geometric_mean = ((r_macro + epsilon) * (combined_variety + epsilon)) ** 0.5
+    
+    # Scale to [0, 1] range (subtract epsilon contribution)
+    final_score = max(0.0, geometric_mean - epsilon)
+    
+    # Minimum score for valid schema (so model always gets some gradient)
+    final_score = max(final_score, 0.05)
+    
     info = {
         "r_schema": r_schema,
-        "r_macro": r_macro,
-        "r_variety_h": r_variety_h,
-        "r_variety_llm": r_variety_llm,
+        "r_macro": round(r_macro, 3),
+        "r_variety_h": round(r_variety_h, 3),
+        "r_variety_llm": round(r_variety_llm, 3),
+        "combined_variety": round(combined_variety, 3),
+        "geometric_mean": round(geometric_mean, 3),
         "macro_info": info_macro,
         "variety_info": info_variety
     }
     
-    return final_score, info
+    return round(final_score, 3), info
