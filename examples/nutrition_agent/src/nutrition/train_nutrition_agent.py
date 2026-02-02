@@ -22,51 +22,52 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 16,  # Conservative for stability
-        "max_prompt_length": 2048,  # Reduced for Math model (4K context limit)
-        "max_response_length": 1536,  # Reduced: prompt + response must fit in 4K
+        "max_prompt_length": 4096,  # 14B-Instruct supports longer context
+        "max_response_length": 2048,  # Sufficient for meal plans
         "truncation": "error",
     },
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 2,  # Conservative parallel rollouts
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "n": 2,  # Keep conservative - more stable
+            "log_prob_micro_batch_size_per_gpu": 2,  # Keep small to avoid OOM spikes
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.5,  # 50% (~70GB for vLLM)
-            "max_model_len": 4096,  # Math model only supports 4K context
+            "gpu_memory_utilization": 0.45,  # CONSERVATIVE: leave headroom for training
+            "max_model_len": 8192,  # 14B supports 32K, but 8K is safer
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 16,  # Further reduced concurrent sequences
-                    "max_num_batched_tokens": 4096,  # Must match max_model_len for Math model
-                    "enable_chunked_prefill": False,  # Disable chunked prefill (can cause issues)
+                    "max_num_seqs": 8,  # REDUCED: prevents KV cache explosion
+                    "max_num_batched_tokens": 8192,
+                    "enable_chunked_prefill": False,
+                    "enforce_eager": True,  # Disable CUDA graphs - more stable
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 16,  # Reduced to match train_batch_size
-            "ppo_micro_batch_size_per_gpu": 4,
-            "optim": {"lr": 1e-6},
+            "ppo_mini_batch_size": 8,  # REDUCED: smaller batches = less peak memory
+            "ppo_micro_batch_size_per_gpu": 2,  # REDUCED: safer gradient accumulation
+            "optim": {"lr": 5e-7},  # Slightly lower LR for larger model
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
             "entropy_coeff": 0,
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": True,
-                "optimizer_offload": True,
+                "param_offload": True,  # Offload params to CPU when not in use
+                "optimizer_offload": True,  # Offload optimizer states to CPU
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 8,  # Increased back to 8 for H200
+            "log_prob_micro_batch_size_per_gpu": 4,  # REDUCED for 14B
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-Math-7B-Instruct",  # Math model for better arithmetic
+            "path": "Qwen/Qwen2.5-14B-Instruct",  # 14B for better math + tool calling
             "use_remove_padding": True,
-            "enable_gradient_checkpointing": True,
+            "enable_gradient_checkpointing": True,  # Essential for memory
         },
     },
     "trainer": {
@@ -75,7 +76,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition",
+        "experiment_name": "nutrition_14b",
         "nnodes": 1,
         "test_freq": 16,
         "total_epochs": 5,
@@ -105,8 +106,8 @@ def config_train_fast() -> Dict[str, Any]:
     print(f"EXPERIMENT_NAME={EXPERIMENT_NAME}")
 
     config = deepcopy(RL_TRAINING_CONFIG)
-    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.6
-    config["actor_rollout_ref"]["model"]["path"] = "Qwen/Qwen2.5-Math-7B-Instruct"
+    # Fast config uses same 14B model but fewer steps
+    config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] = 0.5
     config["data"]["val_files"] = "data/fitness_scenarios_val.parquet"
     config["trainer"]["total_epochs"] = 1
     config["trainer"]["total_training_steps"] = 1
