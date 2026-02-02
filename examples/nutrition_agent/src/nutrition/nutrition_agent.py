@@ -218,6 +218,8 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
         logger.info(f"[Rollout {rollout.rollout_id}] Question: {question}")
 
         # 5. Invoke Agent
+        final_state = None
+        agent_failed = False
         try:
             # We use a large recursion limit to allow for many tool calls
             # Manually prepend the system prompt since state_modifier might not be supported in installed version
@@ -230,15 +232,17 @@ class LitNutritionAgent(agl.LitAgent[Dict[str, Any]]):
                 },
             )
         except Exception as e:
-            logger.exception(f"[Rollout {rollout.rollout_id}] Error during agent invocation: {e}")
+            logger.warning(f"[Rollout {rollout.rollout_id}] Agent invocation failed: {e}")
             if self.strict_failures:
                 raise
-            return None
+            agent_failed = True
 
         # 6. Extract Result
-        # We look for the last tool call to 'return_final_answer_tool' or the final message
-        messages = final_state["messages"]
         final_payload = None
+        messages = []
+        
+        if not agent_failed and final_state is not None:
+            messages = final_state.get("messages", [])
         
         # Strategy: Iterate backwards to find the tool call or the tool output
         # The tool 'return_final_answer_tool' returns the JSON dict directly.
