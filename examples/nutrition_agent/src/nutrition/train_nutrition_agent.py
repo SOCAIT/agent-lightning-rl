@@ -21,7 +21,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 8,  # Smaller batch for stability
+        "train_batch_size": 4,  # Smaller batch to avoid OOM
         "max_prompt_length": 2048,  # Leave room for response
         "max_response_length": 1024,  # Conservative response length
         "truncation": "left",  # Truncate from left if needed
@@ -33,7 +33,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "log_prob_micro_batch_size_per_gpu": 2,  # Smaller batches
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.35,  # More headroom for training
+            "gpu_memory_utilization": 0.25,  # Give more room to training on GPU
             "max_model_len": 8192,  # Give vLLM room so responses are never length 0
             "engine_kwargs": {
                 "vllm": {
@@ -47,8 +47,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 8,  # Smaller batch
-            "ppo_micro_batch_size_per_gpu": 2,  # Smaller micro batch
+            "ppo_mini_batch_size": 4,  # Smaller batch
+            "ppo_micro_batch_size_per_gpu": 1,  # Smallest micro batch
             "optim": {"lr": 1e-6},
             "use_kl_loss": False,
             "kl_loss_coef": 0.0,
@@ -56,13 +56,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": False,  # 2x H100 can keep on GPU
-                "optimizer_offload": False,
+                "param_offload": True,  # Offload to reduce GPU pressure
+                "optimizer_offload": True,
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 4,  # Smaller
-            "fsdp_config": {"param_offload": False},
+            "log_prob_micro_batch_size_per_gpu": 2,  # Smaller
+            "fsdp_config": {"param_offload": True},
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",  # 14B training
