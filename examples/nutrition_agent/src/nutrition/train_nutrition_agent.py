@@ -56,13 +56,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": True,  # Offload to reduce GPU pressure
-                "optimizer_offload": True,
+                "param_offload": False,  # Keep params on H100 (fixes CPU OOM)
+                "optimizer_offload": False,
             },
         },
         "ref": {
             "log_prob_micro_batch_size_per_gpu": 1,  # Reduced to avoid memory spikes
-            "fsdp_config": {"param_offload": True},
+            "fsdp_config": {"param_offload": False},
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
@@ -78,7 +78,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "project_name": "AgentLightning",
         "experiment_name": "nutrition_14b_stable",
         "nnodes": 1,
-        "test_freq": 16,
+        "test_freq": 16,  # Validate every 16 steps
+        "save_freq": 16,  # Save checkpoint every 16 steps (matches validation)
         "total_epochs": 5,
     },
 }
