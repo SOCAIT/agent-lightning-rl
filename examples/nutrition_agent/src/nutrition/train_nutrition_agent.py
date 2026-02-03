@@ -20,42 +20,42 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 16,  # Increased: You have the VRAM for larger batches
-        "max_prompt_length": 2048, 
-        "max_response_length": 2048, # Increased: Agents need room for multi-turn reasoning
+        "train_batch_size": 16,
+        "max_prompt_length": 2048,
+        "max_response_length": 2048,
         "truncation": "left",
     },
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 8,  # CRITICAL: GRPO needs a group (n > 1) to calculate relative advantage
-            "log_prob_micro_batch_size_per_gpu": 4, 
+            "n": 8,
+            "log_prob_micro_batch_size_per_gpu": 2,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.5,  # 90GB for vLLM; plenty for 14B + massive KV cache
+            "gpu_memory_utilization": 0.45,
             "max_model_len": 8192,
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 16, 
+                    "max_num_seqs": 8,
                     "max_num_batched_tokens": 8192,
-                    "enable_chunked_prefill": True, # Helps manage memory during long agent turns
-                    "enforce_eager": False, # False is faster; only use True if you see CUDA errors
+                    "enable_chunked_prefill": False, # SET TO FALSE: Fixes shape mismatches
+                    "enforce_eager": True, # SET TO TRUE: Fixes vLLM/FSDP graph shape errors
                 }
             },
         },
         "actor": {
             "ppo_mini_batch_size": 16,
-            "ppo_micro_batch_size_per_gpu": 2, 
+            "ppo_micro_batch_size_per_gpu": 2,
             "optim": {"lr": 1e-6},
-            "use_kl_loss": True, # Enabled to keep agent from "hallucinating" tool logic
+            "use_kl_loss": True,
             "kl_loss_coef": 0.05,
             "entropy_coeff": 0.01,
             "clip_ratio_low": 0.2,
             "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": False, # Keep on H100s for speed
+                "param_offload": False,
                 "optimizer_offload": False,
             },
         },
@@ -65,17 +65,17 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
-            "use_remove_padding": True, # ENABLED: Significant speed boost for 14B models
+            "use_remove_padding": False, # SET TO FALSE: Standardizes shapes for FSDP
             "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
         "n_gpus_per_node": 2,
-        "val_before_train": True,
+        "val_before_train": False,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_agent_grpo",
+        "experiment_name": "nutrition_14b_stable_grpo",
         "nnodes": 1,
         "test_freq": 16,
         "save_freq": 32,
