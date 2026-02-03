@@ -26,7 +26,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "max_prompt_length": 2048,  # Plenty for your user profiles
         "max_response_length": 2048, # Needed for multi-step tool reasoning
     },
-   "actor_rollout_ref": {
+    "actor_rollout_ref": {
         "rollout": {
             "n": 8, # Compare 8 different "thinking paths" per prompt
             "gpu_memory_utilization": 0.5, # 90GB for vLLM to hold long tool-call histories
@@ -46,7 +46,6 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
                 "optimizer_offload": False,
             },
         },
-    },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
             "use_remove_padding": True, # Faster training, you have the VRAM
