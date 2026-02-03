@@ -33,14 +33,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "log_prob_micro_batch_size_per_gpu": 2,  # Smaller batches
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.25,  # Give more room to training on GPU
-            "max_model_len": 8192,  # Give vLLM room so responses are never length 0
+            "gpu_memory_utilization": 0.25,  # Reduced vLLM memory to make room for training context
+            "max_model_len": 8192,  # Back to 8K to fit prompts
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 4,  # Fewer concurrent sequences
-                    "max_num_batched_tokens": 4096,
+                    "max_num_seqs": 2,  # Drastically reduced concurrency to save memory
+                    "max_num_batched_tokens": 8192,
                     "enable_chunked_prefill": False,
                     "enforce_eager": True,
                 }
@@ -61,13 +61,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 2,  # Smaller
+            "log_prob_micro_batch_size_per_gpu": 1,  # Reduced to avoid memory spikes
             "fsdp_config": {"param_offload": True},
         },
         "model": {
-            "path": "Qwen/Qwen2.5-14B-Instruct",  # 14B training
-            "use_remove_padding": False,  # Avoid empty sequence edge cases
-            "enable_gradient_checkpointing": False,  # Disable to avoid empty-seq issues
+            "path": "Qwen/Qwen2.5-14B-Instruct",
+            "use_remove_padding": False,  # Keep DISABLED (fixes 0-length error)
+            "enable_gradient_checkpointing": True,  # RE-ENABLE (fixes OOM)
         },
     },
     "trainer": {
