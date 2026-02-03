@@ -16,71 +16,48 @@ import agentlightning as agl
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
-        "use_kl_in_reward": False,
+        "use_kl_in_reward": True,
+        "kl_coef": 0.03, # Gentle penalty to keep agent personality stable
     },
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 4,  # Smaller batch to avoid OOM
-        "max_prompt_length": 2048,  # Leave room for response
-        "max_response_length": 1024,  # Conservative response length
-        "truncation": "left",  # Truncate from left if needed
+        "train_batch_size": 16,     # You can go higher, but start here for stability
+        "max_prompt_length": 2048,  # Plenty for your user profiles
+        "max_response_length": 2048, # Needed for multi-step tool reasoning
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 1,
-            "n": 1,  # Single rollout at a time (more stable)
-            "log_prob_micro_batch_size_per_gpu": 2,  # Smaller batches
-            "multi_turn": {"format": "hermes"},
-            "name": "vllm",
-            "gpu_memory_utilization": 0.25,  # Reduced vLLM memory to make room for training context
-            "max_model_len": 8192,  # Back to 8K to fit prompts
+            "n": 8,                 # CRITICAL for GRPO: compare 8 agent trajectories at once
+            "gpu_memory_utilization": 0.45, # Give vLLM ~81GB VRAM per GPU
             "engine_kwargs": {
                 "vllm": {
-                    "enable_auto_tool_choice": True,
-                    "tool_call_parser": "hermes",
-                    "max_num_seqs": 2,  # Drastically reduced concurrency to save memory
-                    "max_num_batched_tokens": 8192,
-                    "enable_chunked_prefill": False,
-                    "enforce_eager": True,
+                    "max_num_seqs": 16, # Enough for 8-group rollout + overhead
+                    "enable_chunked_prefill": True, # Smooths out memory spikes from tool outputs
+                    "enforce_eager": False, # Switch to Graph mode for 2x speedup
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 4,  # Smaller batch
-            "ppo_micro_batch_size_per_gpu": 1,  # Smallest micro batch
+            "ppo_mini_batch_size": 16,
+            "ppo_micro_batch_size_per_gpu": 2, 
             "optim": {"lr": 1e-6},
-            "use_kl_loss": False,
-            "kl_loss_coef": 0.0,
-            "entropy_coeff": 0,
-            "clip_ratio_low": 0.2,
-            "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": False,  # Keep params on H100 (fixes CPU OOM)
+                "param_offload": False, # No need for CPU offload with 180GB!
                 "optimizer_offload": False,
             },
         },
-        "ref": {
-            "log_prob_micro_batch_size_per_gpu": 1,  # Reduced to avoid memory spikes
-            "fsdp_config": {"param_offload": False},
-        },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
-            "use_remove_padding": False,  # Keep DISABLED (fixes 0-length error)
-            "enable_gradient_checkpointing": True,  # RE-ENABLE (fixes OOM)
+            "use_remove_padding": True, # Faster training, you have the VRAM
+            "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
-        "n_gpus_per_node": 2,  # FSDP shards across both GPUs
-        "val_before_train": True,
-        "critic_warmup": 0,
-        "logger": ["console", "wandb"],
-        "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_stable",
-        "nnodes": 1,
-        "test_freq": 16,  # Validate every 16 steps
-        "save_freq": 16,  # Save checkpoint every 16 steps (matches validation)
+        "n_gpus_per_node": 2,
         "total_epochs": 5,
+        "test_freq": 16,
+        "save_freq": 32,
     },
 }
 
