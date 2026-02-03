@@ -77,8 +77,15 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "project_name": "AgentLightning",
         "experiment_name": "nutrition_14b_stable_grpo",
         "nnodes": 1,
-        "test_freq": 16,
-        "save_freq": 32,
+        # --- ROLLING CHECKPOINT LOGIC ---
+        "save_freq": 16,                    # Saves every 16 iterations
+        "remove_previous_ckpt_in_save": True, # DELETES the folder from step 16 when step 32 is saved
+        "default_local_dir": "./checkpoints", # Path where the latest folder will live
+        # --------------------------------
+        
+        "resume_mode": "auto",              # If it crashes, it starts back from the last save
+        "critic_warmup": 0,
+        "log_val_generations": 5,           # Logs 5 agent examples to WandB every test_freq
         "total_epochs": 5,
     },
 }
