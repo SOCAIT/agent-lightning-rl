@@ -12,51 +12,74 @@ from nutrition_agent import LitNutritionAgent
 from deterministic_nutrition_agent import LitNutritionAgentDeterministic
 
 import agentlightning as agl
-
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
         "use_kl_in_reward": True,
-        "kl_coef": 0.03, # Gentle penalty to keep agent personality stable
     },
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 16,     # You can go higher, but start here for stability
-        "max_prompt_length": 2048,  # Plenty for your user profiles
-        "max_response_length": 2048, # Needed for multi-step tool reasoning
+        "train_batch_size": 16,  # Increased: You have the VRAM for larger batches
+        "max_prompt_length": 2048, 
+        "max_response_length": 2048, # Increased: Agents need room for multi-turn reasoning
+        "truncation": "left",
     },
     "actor_rollout_ref": {
         "rollout": {
-            "n": 8, # Compare 8 different "thinking paths" per prompt
-            "gpu_memory_utilization": 0.5, # 90GB for vLLM to hold long tool-call histories
+            "tensor_model_parallel_size": 1,
+            "n": 8,  # CRITICAL: GRPO needs a group (n > 1) to calculate relative advantage
+            "log_prob_micro_batch_size_per_gpu": 4, 
+            "multi_turn": {"format": "hermes"},
+            "name": "vllm",
+            "gpu_memory_utilization": 0.5,  # 90GB for vLLM; plenty for 14B + massive KV cache
+            "max_model_len": 8192,
             "engine_kwargs": {
                 "vllm": {
-                    "max_num_seqs": 16,
-                    "enable_chunked_prefill": True,
-                    "max_model_len": 8192, # Allow for 6-turn history + JSON tool outputs
+                    "enable_auto_tool_choice": True,
+                    "tool_call_parser": "hermes",
+                    "max_num_seqs": 16, 
+                    "max_num_batched_tokens": 8192,
+                    "enable_chunked_prefill": True, # Helps manage memory during long agent turns
+                    "enforce_eager": False, # False is faster; only use True if you see CUDA errors
                 }
             },
         },
         "actor": {
             "ppo_mini_batch_size": 16,
             "ppo_micro_batch_size_per_gpu": 2, 
+            "optim": {"lr": 1e-6},
+            "use_kl_loss": True, # Enabled to keep agent from "hallucinating" tool logic
+            "kl_loss_coef": 0.05,
+            "entropy_coeff": 0.01,
+            "clip_ratio_low": 0.2,
+            "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": False, # Use that VRAM!
+                "param_offload": False, # Keep on H100s for speed
                 "optimizer_offload": False,
             },
         },
+        "ref": {
+            "log_prob_micro_batch_size_per_gpu": 2,
+            "fsdp_config": {"param_offload": False},
+        },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
-            "use_remove_padding": True, # Faster training, you have the VRAM
+            "use_remove_padding": True, # ENABLED: Significant speed boost for 14B models
             "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
         "n_gpus_per_node": 2,
-        "total_epochs": 5,
+        "val_before_train": True,
+        "critic_warmup": 0,
+        "logger": ["console", "wandb"],
+        "project_name": "AgentLightning",
+        "experiment_name": "nutrition_14b_agent_grpo",
+        "nnodes": 1,
         "test_freq": 16,
         "save_freq": 32,
+        "total_epochs": 5,
     },
 }
 
