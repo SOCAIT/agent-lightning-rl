@@ -26,27 +26,27 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "max_prompt_length": 2048,  # Plenty for your user profiles
         "max_response_length": 2048, # Needed for multi-step tool reasoning
     },
-    "actor_rollout_ref": {
+   "actor_rollout_ref": {
         "rollout": {
-            "n": 8,                 # CRITICAL for GRPO: compare 8 agent trajectories at once
-            "gpu_memory_utilization": 0.45, # Give vLLM ~81GB VRAM per GPU
+            "n": 8, # Compare 8 different "thinking paths" per prompt
+            "gpu_memory_utilization": 0.5, # 90GB for vLLM to hold long tool-call histories
             "engine_kwargs": {
                 "vllm": {
-                    "max_num_seqs": 16, # Enough for 8-group rollout + overhead
-                    "enable_chunked_prefill": True, # Smooths out memory spikes from tool outputs
-                    "enforce_eager": False, # Switch to Graph mode for 2x speedup
+                    "max_num_seqs": 16,
+                    "enable_chunked_prefill": True,
+                    "max_model_len": 8192, # Allow for 6-turn history + JSON tool outputs
                 }
             },
         },
         "actor": {
             "ppo_mini_batch_size": 16,
             "ppo_micro_batch_size_per_gpu": 2, 
-            "optim": {"lr": 1e-6},
             "fsdp_config": {
-                "param_offload": False, # No need for CPU offload with 180GB!
+                "param_offload": False, # Use that VRAM!
                 "optimizer_offload": False,
             },
         },
+    },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
             "use_remove_padding": True, # Faster training, you have the VRAM
