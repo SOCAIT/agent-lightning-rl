@@ -84,7 +84,6 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         # --------------------------------
         
         "resume_mode": "auto",              # If it crashes, it starts back from the last save
-        "critic_warmup": 0,
         "log_val_generations": 5,           # Logs 5 agent examples to WandB every test_freq
         "total_epochs": 5,
     },
