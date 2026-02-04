@@ -12,6 +12,7 @@ from nutrition_agent import LitNutritionAgent
 from deterministic_nutrition_agent import LitNutritionAgentDeterministic
 
 import agentlightning as agl
+# B200 180GB x2
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
@@ -87,6 +88,51 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "resume_mode": "auto",              # If it crashes, it starts back from the last save
         "log_val_generations": 5,           # Logs 5 agent examples to WandB every test_freq
         "total_epochs": 5,
+    },
+}
+
+# H200 141GB x2
+RL_TRAINING_CONFIG: Dict[str, Any] = {
+    "algorithm": {
+        "adv_estimator": "grpo",
+        "use_kl_in_reward": True,
+    },
+    "data": {
+        "train_files": "data/fitness_scenarios_train.parquet",
+        "val_files": "data/fitness_scenarios_val.parquet",
+        "train_batch_size": 8,      # LOWERED: From 16 to 8 to reduce activation memory
+        "max_prompt_length": 2048,
+        "max_response_length": 1024, # TIGHTENED: 2k response is huge for 140GB cards
+        "truncation": "left",
+    },
+    "actor_rollout_ref": {
+        "rollout": {
+            "n": 8,
+            "gpu_memory_utilization": 0.30, # REDUCED: Frees up ~14GB per GPU for the Actor
+            "engine_kwargs": {
+                "vllm": {
+                    "enforce_eager": True,
+                    "max_num_seqs": 8,
+                }
+            },
+        },
+        "actor": {
+            "ppo_mini_batch_size": 8,
+            "ppo_micro_batch_size_per_gpu": 1, # MINIMIZED: Absolute floor for memory safety
+            "fsdp_config": {
+                "param_offload": False, 
+                "optimizer_offload": True,     # ENABLED: Offloads optimizer to System RAM
+            },
+        },
+        "ref": {
+            "fsdp_config": {
+                "param_offload": True          # ENABLED: Moves Ref model to System RAM
+            },
+        },
+        "model": {
+            "path": "Qwen/Qwen2.5-14B-Instruct",
+            "enable_gradient_checkpointing": True,
+        },
     },
 }
 
