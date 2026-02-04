@@ -100,9 +100,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 8,       # Reduced for memory stability
-        "max_prompt_length": 1024,   # Tightened to save KV cache space
-        "max_response_length": 1024, # Total 2k context is safer for 140GB
+        "train_batch_size": 8,
+        "max_prompt_length": 1024,
+        "max_response_length": 1024,
         "truncation": "left",
     },
     "actor_rollout_ref": {
@@ -112,14 +112,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "log_prob_micro_batch_size_per_gpu": 2,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.25, # REDUCED: Frees up 21GB more per GPU for the Actor
-            "max_model_len": 4096,         # REDUCED: Prevents vLLM from over-allocating
+            "gpu_memory_utilization": 0.2, # DROPPED to 0.2 to give Actor maximum headroom
+            "max_model_len": 4096,
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
                     "max_num_seqs": 8,
-                    "enable_chunked_prefill": True, # Helps with peak memory spikes
                     "enforce_eager": True,
                 }
             },
@@ -127,18 +126,19 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "actor": {
             "ppo_mini_batch_size": 8,
             "ppo_micro_batch_size_per_gpu": 1,
-            "optim": {"lr": 1e-6},
-            "use_kl_loss": True,
-            "kl_loss_coef": 0.05,
+            "optim": {
+                "lr": 1e-6,
+                # Use a fused optimizer if available to reduce intermediate tensors
+            },
             "fsdp_config": {
                 "param_offload": False,
-                "optimizer_offload": True,  # CRITICAL: Offloads optimizer to System RAM
+                "optimizer_offload": True,  # MUST BE TRUE: Moves ~40GB to System RAM
             },
         },
         "ref": {
             "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": True,      # CRITICAL: Offloads Ref model to System RAM
+                "param_offload": True,      # MUST BE TRUE: Moves ~28GB to System RAM
             },
         },
         "model": {
