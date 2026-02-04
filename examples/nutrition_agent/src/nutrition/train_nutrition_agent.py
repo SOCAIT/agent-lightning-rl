@@ -100,9 +100,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 8,      # Global batch size
-        "max_prompt_length": 2048,
-        "max_response_length": 1024, 
+        "train_batch_size": 8,       # Reduced for memory stability
+        "max_prompt_length": 1024,   # Tightened to save KV cache space
+        "max_response_length": 1024, # Total 2k context is safer for 140GB
         "truncation": "left",
     },
     "actor_rollout_ref": {
@@ -112,15 +112,15 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "log_prob_micro_batch_size_per_gpu": 2,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.4, # Give vLLM ~56GB per H200
-            "max_model_len": 8192,
+            "gpu_memory_utilization": 0.25, # REDUCED: Frees up 21GB more per GPU for the Actor
+            "max_model_len": 4096,         # REDUCED: Prevents vLLM from over-allocating
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
                     "max_num_seqs": 8,
-                    "enable_chunked_prefill": False,
-                    "enforce_eager": True, # Fixes graph-related OOM/Shape errors
+                    "enable_chunked_prefill": True, # Helps with peak memory spikes
+                    "enforce_eager": True,
                 }
             },
         },
@@ -132,13 +132,13 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "kl_loss_coef": 0.05,
             "fsdp_config": {
                 "param_offload": False,
-                "optimizer_offload": True, # Offload to CPU RAM to save H200 VRAM
+                "optimizer_offload": True,  # CRITICAL: Offloads optimizer to System RAM
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": True, # Offload Ref model to CPU RAM
+                "param_offload": True,      # CRITICAL: Offloads Ref model to System RAM
             },
         },
         "model": {
@@ -148,17 +148,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         },
     },
     "trainer": {
-        "nnodes": 1,                # 1 Machine
-        "n_gpus_per_node": 2,       # FIXED: Changed from 8 to 2
+        "nnodes": 1,
+        "n_gpus_per_node": 2,
         "val_before_train": False,
-        "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_h200",
-        # --- ROLLING CHECKPOINT LOGIC ---
-        "save_freq": 16,            # Save every 16 steps
-        "test_freq": 16,
-        "remove_previous_ckpt_in_save": True, # Keep only the last save
+        "experiment_name": "nutrition_14b_h200_fix",
+        "save_freq": 16,
+        "remove_previous_ckpt_in_save": True,
         "default_local_dir": "./checkpoints/nutrition_agent",
         "resume_mode": "auto",
         "total_epochs": 5,
