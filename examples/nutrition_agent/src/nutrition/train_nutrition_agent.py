@@ -100,42 +100,70 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 8,      # LOWERED: From 16 to 8 to reduce activation memory
+        "train_batch_size": 8,      # Global batch size
         "max_prompt_length": 2048,
-        "max_response_length": 1024, # TIGHTENED: 2k response is huge for 140GB cards
+        "max_response_length": 1024, 
         "truncation": "left",
     },
     "actor_rollout_ref": {
         "rollout": {
+            "tensor_model_parallel_size": 1,
             "n": 8,
-            "gpu_memory_utilization": 0.30, # REDUCED: Frees up ~14GB per GPU for the Actor
+            "log_prob_micro_batch_size_per_gpu": 2,
+            "multi_turn": {"format": "hermes"},
+            "name": "vllm",
+            "gpu_memory_utilization": 0.4, # Give vLLM ~56GB per H200
+            "max_model_len": 8192,
             "engine_kwargs": {
                 "vllm": {
-                    "enforce_eager": True,
+                    "enable_auto_tool_choice": True,
+                    "tool_call_parser": "hermes",
                     "max_num_seqs": 8,
+                    "enable_chunked_prefill": False,
+                    "enforce_eager": True, # Fixes graph-related OOM/Shape errors
                 }
             },
         },
         "actor": {
             "ppo_mini_batch_size": 8,
-            "ppo_micro_batch_size_per_gpu": 1, # MINIMIZED: Absolute floor for memory safety
+            "ppo_micro_batch_size_per_gpu": 1,
+            "optim": {"lr": 1e-6},
+            "use_kl_loss": True,
+            "kl_loss_coef": 0.05,
             "fsdp_config": {
-                "param_offload": False, 
-                "optimizer_offload": True,     # ENABLED: Offloads optimizer to System RAM
+                "param_offload": False,
+                "optimizer_offload": True, # Offload to CPU RAM to save H200 VRAM
             },
         },
         "ref": {
+            "log_prob_micro_batch_size_per_gpu": 2,
             "fsdp_config": {
-                "param_offload": True          # ENABLED: Moves Ref model to System RAM
+                "param_offload": True, # Offload Ref model to CPU RAM
             },
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
+            "use_remove_padding": False, 
             "enable_gradient_checkpointing": True,
         },
     },
+    "trainer": {
+        "nnodes": 1,                # 1 Machine
+        "n_gpus_per_node": 2,       # FIXED: Changed from 8 to 2
+        "val_before_train": False,
+        "critic_warmup": 0,
+        "logger": ["console", "wandb"],
+        "project_name": "AgentLightning",
+        "experiment_name": "nutrition_14b_h200",
+        # --- ROLLING CHECKPOINT LOGIC ---
+        "save_freq": 16,            # Save every 16 steps
+        "test_freq": 16,
+        "remove_previous_ckpt_in_save": True, # Keep only the last save
+        "default_local_dir": "./checkpoints/nutrition_agent",
+        "resume_mode": "auto",
+        "total_epochs": 5,
+    },
 }
-
 
 def config_train_fast() -> Dict[str, Any]:
     """A fast training run for CI testing purposes."""
