@@ -112,7 +112,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "log_prob_micro_batch_size_per_gpu": 2,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.2, # DROPPED to 0.2 to give Actor maximum headroom
+            "gpu_memory_utilization": 0.45, # High enough to let vLLM load
+            "free_cache_engine": True,      # Frees memory AFTER rollout so Actor doesn't OOM
             "max_model_len": 4096,
             "engine_kwargs": {
                 "vllm": {
