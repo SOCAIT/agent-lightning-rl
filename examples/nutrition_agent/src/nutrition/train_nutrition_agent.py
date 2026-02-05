@@ -122,8 +122,8 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         },
         "rollout": {
             "name": "vllm",
-            "tensor_model_parallel_size": 2,
-            "n": 5,
+            "tensor_model_parallel_size": 1,
+            "n": 4,
             "log_prob_micro_batch_size": 116,  # Matches bash: ${mini_batch_size}
             "gpu_memory_utilization": 0.25,
             "max_num_seqs": 512,  # From bash script
