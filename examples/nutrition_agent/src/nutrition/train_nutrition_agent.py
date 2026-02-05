@@ -100,69 +100,68 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 8,
-        "max_prompt_length": 1024,
-        "max_response_length": 1024,
+        "train_batch_size": 4,      # Smaller batch size to keep activation memory low
+        "max_prompt_length": 1024,   # Reduced context to prevent "context snowball"
+        "max_response_length": 1024, # Enough for a full JSON meal plan
         "truncation": "left",
     },
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 8,
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "n": 4,                  # GRPO group size (4 is stable and memory-efficient)
+            "log_prob_micro_batch_size_per_gpu": 1,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.45, # High enough to let vLLM load
-            "free_cache_engine": True,      # Frees memory AFTER rollout so Actor doesn't OOM
-            "max_model_len": 4096,
+            "gpu_memory_utilization": 0.4, # Give vLLM ~56GB of the 141GB
+            "free_cache_engine": True,      # CRITICAL: Frees VRAM before the training update
+            "max_model_len": 4096,          # Cap total context across all 6 turns
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 8,
-                    "enforce_eager": True,
+                    "max_num_seqs": 4,
+                    "enforce_eager": True,  # Disables CUDA graphs to save static memory
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 8,
+            "ppo_mini_batch_size": 4,
             "ppo_micro_batch_size_per_gpu": 1,
-            "optim": {
-                "lr": 1e-6,
-                # Use a fused optimizer if available to reduce intermediate tensors
-            },
+            "optim": {"lr": 1e-6},
+            "use_kl_loss": True,
+            "kl_loss_coef": 0.05,
             "fsdp_config": {
-                "param_offload": False,
-                "optimizer_offload": True,  # MUST BE TRUE: Moves ~40GB to System RAM
+                "param_offload": False,     # Keep weights on GPU for speed
+                "optimizer_offload": True,  # CRITICAL: Moves Adam states to CPU RAM
             },
         },
         "ref": {
             "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": True,      # MUST BE TRUE: Moves ~28GB to System RAM
+                "param_offload": True,      # CRITICAL: Moves Ref model to CPU RAM
             },
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
-            "use_remove_padding": False, 
-            "enable_gradient_checkpointing": True,
+            "use_remove_padding": False,    # Keeps tensor shapes consistent for FSDP
+            "enable_gradient_checkpointing": True, # Essential for 14B models
         },
     },
     "trainer": {
         "nnodes": 1,
-        "n_gpus_per_node": 2,
+        "n_gpus_per_node": 2,           # Correct count for your H200 setup
         "val_before_train": False,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_h200_fix",
+        "experiment_name": "nutrition_14b_h200_stable",
         "save_freq": 16,
-        "remove_previous_ckpt_in_save": True,
+        "test_freq": 16,
+        "remove_previous_ckpt_in_save": True, # Keep only the latest checkpoint
         "default_local_dir": "./checkpoints/nutrition_agent",
         "resume_mode": "auto",
         "total_epochs": 5,
     },
 }
-
 def config_train_fast() -> Dict[str, Any]:
     """A fast training run for CI testing purposes."""
 
