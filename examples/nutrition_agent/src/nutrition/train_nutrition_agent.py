@@ -100,69 +100,77 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 4, 
-        "max_prompt_length": 1024,
-        "max_response_length": 1024, # Total context ~2k, fits within 4k model_len
+        "train_batch_size": 4,  # AGGRESSIVE: down from 16
+        "max_prompt_length": 1536,  # REDUCED from 2048
+        "max_response_length": 1536,  # REDUCED from 2048
         "truncation": "left",
     },
     "actor_rollout_ref": {
-        "hybrid_engine": True,
         "rollout": {
-            "name": "vllm",
-            "tensor_model_parallel_size": 1,
-            "n": 4,                   # 4 versions per prompt is plenty for GRPO
+            "tensor_model_parallel_size": 2,  # SPLIT model across both GPUs for inference
+            "n": 4,
             "log_prob_micro_batch_size_per_gpu": 1,
             "multi_turn": {"format": "hermes"},
-            "gpu_memory_utilization": 0.4, 
-            "free_cache_engine": True, 
-            "max_model_len": 4096,    # Limits total tokens across all 6 turns
+            "name": "vllm",
+            "gpu_memory_utilization": 0.30,  # VERY conservative
+            "max_model_len": 4096,  # REDUCED significantly
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 4,
+                    "max_num_seqs": 2,  # MINIMAL
+                    "max_num_batched_tokens": 4096,
+                    "enable_chunked_prefill": False,
                     "enforce_eager": True,
                 }
             },
         },
         "actor": {
-            "strategy": "fsdp",
             "ppo_mini_batch_size": 4,
             "ppo_micro_batch_size_per_gpu": 1,
-            "optim": {"lr": 1e-6},
+            "optim": {
+                "lr": 1e-6,
+                "fused": False,  # Disable fused Adam (uses more memory)
+            },
+            "use_kl_loss": True,
+            "kl_loss_coef": 0.05,
+            "entropy_coeff": 0.01,
+            "clip_ratio_low": 0.2,
+            "clip_ratio_high": 0.3,
             "fsdp_config": {
-                "param_offload": True,      # CRITICAL: Moves Actor params to CPU when not in use
-                "optimizer_offload": True,  # CRITICAL: Moves Adam buffers to your 370GB RAM
+                "param_offload": True,  # ENABLE - offload params to CPU
+                "optimizer_offload": True,  # ENABLE - offload optimizer to CPU
             },
         },
         "ref": {
-            "strategy": "fsdp",
             "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": True,      # CRITICAL: Moves Ref model to your 370GB RAM
+                "param_offload": True,
             },
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
-            "enable_gradient_checkpointing": True,
             "use_remove_padding": False,
+            "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
-        "nnodes": 1,
         "n_gpus_per_node": 2,
         "val_before_train": False,
+        "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_h200_stable_v3",
+        "experiment_name": "nutrition_14b_140gb_conservative",
+        "nnodes": 1,
         "save_freq": 16,
         "test_freq": 16,
-        "remove_previous_ckpt_in_save": True, # Keep only the last one!
-        "default_local_dir": "./checkpoints/nutrition_agent",
+        "remove_previous_ckpt_in_save": True,
         "resume_mode": "auto",
+        "log_val_generations": 5,
         "total_epochs": 5,
     },
 }
+   
 def config_train_fast() -> Dict[str, Any]:
     """A fast training run for CI testing purposes."""
 
