@@ -92,6 +92,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
 }
 
 # H200 141GB x2
+# Corrected config for 2x 140GB GPUs (H100/A100)
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
@@ -100,58 +101,61 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 4,  # AGGRESSIVE: down from 16
-        "max_prompt_length": 1536,  # REDUCED from 2048
-        "max_response_length": 1536,  # REDUCED from 2048
+        "train_batch_size": 8,  # Reduced from 16
+        "max_prompt_length": 1536,  # Reduced from 2048
+        "max_response_length": 1536,  # Reduced from 2048
         "truncation": "left",
     },
     "actor_rollout_ref": {
-        "rollout": {
-            "tensor_model_parallel_size": 2,  # SPLIT model across both GPUs for inference
-            "n": 4,
-            "log_prob_micro_batch_size_per_gpu": 1,
-            "multi_turn": {"format": "hermes"},
-            "name": "vllm",
-            "gpu_memory_utilization": 0.30,  # VERY conservative
-            "max_model_len": 4096,  # REDUCED significantly
-            "engine_kwargs": {
-                "vllm": {
-                    "enable_auto_tool_choice": True,
-                    "tool_call_parser": "hermes",
-                    "max_num_seqs": 2,  # MINIMAL
-                    "max_num_batched_tokens": 4096,
-                    "enable_chunked_prefill": False,
-                    "enforce_eager": True,
-                }
-            },
-        },
-        "actor": {
-            "ppo_mini_batch_size": 4,
-            "ppo_micro_batch_size_per_gpu": 1,
-            "optim": {
-                "lr": 1e-6,
-                "fused": False,  # Disable fused Adam (uses more memory)
-            },
-            "use_kl_loss": True,
-            "kl_loss_coef": 0.05,
-            "entropy_coeff": 0.01,
-            "clip_ratio_low": 0.2,
-            "clip_ratio_high": 0.3,
-            "fsdp_config": {
-                "param_offload": True,  # ENABLE - offload params to CPU
-                "optimizer_offload": True,  # ENABLE - offload optimizer to CPU
-            },
-        },
-        "ref": {
-            "log_prob_micro_batch_size_per_gpu": 1,
-            "fsdp_config": {
-                "param_offload": True,
-            },
-        },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
             "use_remove_padding": False,
             "enable_gradient_checkpointing": True,
+            "enable_activation_offload": True,  # NEW: offload activations (works with gradient checkpointing)
+        },
+        "rollout": {
+            "tensor_model_parallel_size": 1,
+            "n": 4,  # Reduced from 8
+            "log_prob_micro_batch_size_per_gpu": 1,  # Reduced from 2
+            "multi_turn": {"format": "hermes"},
+            "name": "vllm",
+            "gpu_memory_utilization": 0.35,  # Reduced from 0.40
+            "max_model_len": 4096,  # Reduced from 8192
+            "free_cache_engine": True,  # Free KV cache after rollout
+            "enforce_eager": True,
+            "engine_kwargs": {
+                "vllm": {
+                    "enable_auto_tool_choice": True,
+                    "tool_call_parser": "hermes",
+                    "max_num_seqs": 4,  # Reduced from 8
+                    "max_num_batched_tokens": 4096,  # Reduced from 8192
+                    "enable_chunked_prefill": False,
+                }
+            },
+        },
+        "actor": {
+            "ppo_mini_batch_size": 8,  # Reduced from 16
+            "ppo_micro_batch_size_per_gpu": 1,  # Reduced from 2
+            "use_dynamic_bsz": False,
+            "grad_clip": 1.0,
+            "optim": {
+                "lr": 1e-6,
+            },
+            "use_kl_loss": True,
+            "kl_loss_coef": 0.05,
+            "entropy_coeff": 0.01,
+            "clip_ratio": 0.2,  # Note: verl uses clip_ratio, not clip_ratio_low/high
+            "fsdp_config": {
+                "param_offload": True,  # Offload params to CPU
+                "grad_offload": True,   # Offload gradients to CPU  
+                "optimizer_offload": True,  # Offload optimizer states to CPU
+            },
+        },
+        "ref": {
+            "log_prob_micro_batch_size_per_gpu": 1,  # Reduced from 2
+            "fsdp_config": {
+                "param_offload": True,
+            },
         },
     },
     "trainer": {
@@ -160,7 +164,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_140gb_conservative",
+        "experiment_name": "nutrition_14b_140gb",
         "nnodes": 1,
         "save_freq": 16,
         "test_freq": 16,
