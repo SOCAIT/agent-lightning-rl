@@ -90,8 +90,6 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "total_epochs": 5,
     },
 }
-
-# H200 141GB x2
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
@@ -100,9 +98,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 16,  # Back to original!
-        "max_prompt_length": 2048,  # Back to original!
-        "max_response_length": 2048,  # Back to original!
+        "train_batch_size": 8,
+        "max_prompt_length": 1024,
+        "max_response_length": 1024,
         "truncation": "left",
     },
     "actor_rollout_ref": {
@@ -110,50 +108,50 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "path": "Qwen/Qwen2.5-14B-Instruct",
             "use_remove_padding": False,
             "enable_gradient_checkpointing": True,
-            "lora_rank": 64,  # LoRA rank (16, 32, 64 are common)
-            "lora_alpha": 128,  # Usually 2x lora_rank
-            "target_modules": "all-linear",  # Which layers to adapt
+            "lora_rank": 32,  # Reduced from 64
+            "lora_alpha": 64,
+            "target_modules": "all-linear",
         },
         "rollout": {
-            "tensor_model_parallel_size": 1,
-            "n": 8,  # Back to original!
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "tensor_model_parallel_size": 2,  # Split model across BOTH GPUs for inference
+            "n": 4,
+            "log_prob_micro_batch_size_per_gpu": 1,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.40,  # Back to original!
-            "max_model_len": 8192,
+            "gpu_memory_utilization": 0.35,
+            "max_model_len": 4096,
             "enforce_eager": True,
             "free_cache_engine": True,
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 8,
-                    "max_num_batched_tokens": 8192,
+                    "max_num_seqs": 4,
+                    "max_num_batched_tokens": 4096,
                     "enable_chunked_prefill": False,
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 16,
-            "ppo_micro_batch_size_per_gpu": 2,
+            "ppo_mini_batch_size": 8,
+            "ppo_micro_batch_size_per_gpu": 1,
             "grad_clip": 1.0,
             "clip_ratio": 0.2,
             "optim": {
-                "lr": 1e-5,  # LoRA typically uses higher LR (1e-5 to 1e-4)
+                "lr": 1e-5,
             },
             "use_kl_loss": True,
             "kl_loss_coef": 0.05,
             "entropy_coeff": 0.01,
             "fsdp_config": {
-                "param_offload": False,  # Not needed with LoRA
-                "optimizer_offload": False,  # Not needed with LoRA
+                "param_offload": True,  # Keep offload ON even with LoRA
+                "optimizer_offload": True,
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": False,
+                "param_offload": True,
             },
         },
     },
@@ -163,7 +161,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_lora_grpo",
+        "experiment_name": "nutrition_14b_lora_v2",
         "nnodes": 1,
         "save_freq": 16,
         "test_freq": 16,
