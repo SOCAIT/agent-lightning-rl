@@ -100,27 +100,25 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 4,      # Smaller batch size to keep activation memory low
-        "max_prompt_length": 1024,   # Reduced context to prevent "context snowball"
-        "max_response_length": 1024, # Enough for a full JSON meal plan
+        "train_batch_size": 4,      # Reduced to keep activation tensors small
+        "max_prompt_length": 1024,
+        "max_response_length": 1024,
         "truncation": "left",
     },
     "actor_rollout_ref": {
         "rollout": {
             "tensor_model_parallel_size": 1,
-            "n": 4,                  # GRPO group size (4 is stable and memory-efficient)
+            "n": 4,                  # Lowering from 8 to 4 saves MASSIVE VRAM
             "log_prob_micro_batch_size_per_gpu": 1,
             "multi_turn": {"format": "hermes"},
             "name": "vllm",
-            "gpu_memory_utilization": 0.4, # Give vLLM ~56GB of the 141GB
-            "free_cache_engine": True,      # CRITICAL: Frees VRAM before the training update
-            "max_model_len": 4096,          # Cap total context across all 6 turns
+            "gpu_memory_utilization": 0.4, 
+            "free_cache_engine": True, 
+            "max_model_len": 4096,
             "engine_kwargs": {
                 "vllm": {
-                    "enable_auto_tool_choice": True,
-                    "tool_call_parser": "hermes",
                     "max_num_seqs": 4,
-                    "enforce_eager": True,  # Disables CUDA graphs to save static memory
+                    "enforce_eager": True,
                 }
             },
         },
@@ -128,23 +126,20 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "ppo_mini_batch_size": 4,
             "ppo_micro_batch_size_per_gpu": 1,
             "optim": {"lr": 1e-6},
-            "use_kl_loss": True,
-            "kl_loss_coef": 0.05,
             "fsdp_config": {
-                "param_offload": False,     # Keep weights on GPU for speed
-                "optimizer_offload": True,  # CRITICAL: Moves Adam states to CPU RAM
+                "param_offload": False,    # Weights stay on GPU for speed
+                "optimizer_offload": True, # Optimizer math moves to CPU
             },
         },
         "ref": {
             "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": True,      # CRITICAL: Moves Ref model to CPU RAM
+                "param_offload": True,     # Ref model moves COMPLETELY to CPU
             },
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
-            "use_remove_padding": False,    # Keeps tensor shapes consistent for FSDP
-            "enable_gradient_checkpointing": True, # Essential for 14B models
+            "enable_gradient_checkpointing": True,
         },
     },
     "trainer": {
