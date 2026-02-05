@@ -98,43 +98,35 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "use_kl_in_reward": True,
     },
     "data": {
-        "train_files": "data/fitness_scenarios_train.parquet",
-        "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 4,      # Reduced to keep activation tensors small
+        "train_batch_size": 8,       # Balanced for 2 GPUs
         "max_prompt_length": 1024,
-        "max_response_length": 1024,
+        "max_response_length": 1024, 
         "truncation": "left",
     },
     "actor_rollout_ref": {
         "rollout": {
-            "tensor_model_parallel_size": 1,
-            "n": 4,                  # Lowering from 8 to 4 saves MASSIVE VRAM
-            "log_prob_micro_batch_size_per_gpu": 1,
-            "multi_turn": {"format": "hermes"},
-            "name": "vllm",
+            "n": 4,                  # Lowering to 4 versions per prompt saves huge VRAM
             "gpu_memory_utilization": 0.4, 
-            "free_cache_engine": True, 
+            "free_cache_engine": True, # Cleans the KV cache before training starts
             "max_model_len": 4096,
             "engine_kwargs": {
                 "vllm": {
                     "max_num_seqs": 4,
-                    "enforce_eager": True,
+                    "enforce_eager": True, # Required when free_cache_engine is True
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 4,
+            "ppo_mini_batch_size": 8,
             "ppo_micro_batch_size_per_gpu": 1,
-            "optim": {"lr": 1e-6},
             "fsdp_config": {
-                "param_offload": False,    # Weights stay on GPU for speed
-                "optimizer_offload": True, # Optimizer math moves to CPU
+                "param_offload": False,    # Keep weights on GPU for training speed
+                "optimizer_offload": True, # Moves ~40GB of Adam math to your 370GB RAM
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": True,     # Ref model moves COMPLETELY to CPU
+                "param_offload": True,     # Moves Ref model COMPLETELY to your 370GB RAM
             },
         },
         "model": {
