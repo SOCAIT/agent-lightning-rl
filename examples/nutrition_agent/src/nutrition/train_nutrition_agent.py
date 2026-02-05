@@ -97,56 +97,67 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "adv_estimator": "grpo",
         "use_kl_in_reward": True,
     },
-    
     "data": {
-         "train_files": "data/fitness_scenarios_train.parquet",
+        "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 8,       # Balanced for 2 GPUs
+        "train_batch_size": 4, 
         "max_prompt_length": 1024,
-        "max_response_length": 1024, 
+        "max_response_length": 1024,
         "truncation": "left",
     },
     "actor_rollout_ref": {
         "rollout": {
-            "n": 4,                  # Lowering to 4 versions per prompt saves huge VRAM
+            "name": "vllm",                # FIXED: This was the missing mandatory value
+            "tensor_model_parallel_size": 1,
+            "n": 4, 
+            "log_prob_micro_batch_size_per_gpu": 1,
+            "multi_turn": {"format": "hermes"},
             "gpu_memory_utilization": 0.4, 
-            "free_cache_engine": True, # Cleans the KV cache before training starts
+            "free_cache_engine": True, 
             "max_model_len": 4096,
+            "enforce_eager": True,
             "engine_kwargs": {
                 "vllm": {
+                    "enable_auto_tool_choice": True,
+                    "tool_call_parser": "hermes",
                     "max_num_seqs": 4,
-                    "enforce_eager": True, # Required when free_cache_engine is True
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 8,
+            "strategy": "fsdp",            # Mandatory field for actor backend
+            "ppo_mini_batch_size": 4,
             "ppo_micro_batch_size_per_gpu": 1,
+            "optim": {"lr": 1e-6},
+            "use_kl_loss": True,
+            "kl_loss_coef": 0.05,
             "fsdp_config": {
-                "param_offload": False,    # Keep weights on GPU for training speed
-                "optimizer_offload": True, # Moves ~40GB of Adam math to your 370GB RAM
+                "param_offload": False,
+                "optimizer_offload": True, # Offload to your 370GB RAM
             },
         },
         "ref": {
+            "log_prob_micro_batch_size_per_gpu": 1,
             "fsdp_config": {
-                "param_offload": True,     # Moves Ref model COMPLETELY to your 370GB RAM
+                "param_offload": True,     # Offload to your 370GB RAM
             },
         },
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
             "enable_gradient_checkpointing": True,
+            "use_remove_padding": False,
         },
     },
     "trainer": {
         "nnodes": 1,
-        "n_gpus_per_node": 2,           # Correct count for your H200 setup
+        "n_gpus_per_node": 2,
         "val_before_train": False,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_h200_stable",
+        "experiment_name": "nutrition_14b_h200_final",
         "save_freq": 16,
         "test_freq": 16,
-        "remove_previous_ckpt_in_save": True, # Keep only the latest checkpoint
+        "remove_previous_ckpt_in_save": True,
         "default_local_dir": "./checkpoints/nutrition_agent",
         "resume_mode": "auto",
         "total_epochs": 5,
