@@ -125,7 +125,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "tensor_model_parallel_size": 1,
             "n": 4,
             "log_prob_micro_batch_size": 116,  # Matches bash: ${mini_batch_size}
-            "gpu_memory_utilization": 0.25,
+            "gpu_memory_utilization": 0.6,
             "max_num_seqs": 512,  # From bash script
             "max_model_len": 1536,  # From bash script
             "max_num_batched_tokens": 1536,  # From bash script
