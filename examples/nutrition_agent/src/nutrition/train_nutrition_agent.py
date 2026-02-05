@@ -90,81 +90,89 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "total_epochs": 5,
     },
 }
-
-# Single B300 260GB
+# Adapted for 6-turn multi-turn with tool use on 2x H100 80GB
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
-        "use_kl_in_reward": True,
+        "use_kl_in_reward": False,  # From reference
+        "kl_ctrl": {
+            "kl_coef": 0.001,
+        },
     },
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 16,
-        "max_prompt_length": 2048,
-        "max_response_length": 2048,
-        "truncation": "left",
+        "train_batch_size": 116,  # 58 * 1 * 2 GPUs (adjust nproc_per_gpu as needed)
+        "val_batch_size": 116,
+        "max_prompt_length": 1024,  # Increased for multi-turn context
+        "max_response_length": 2048,  # Increased for tool use responses
+        "filter_overlong_prompts": True,
+        "truncation": "error",
+        "shuffle": False,
     },
     "actor_rollout_ref": {
         "model": {
             "path": "Qwen/Qwen2.5-14B-Instruct",
-            "use_remove_padding": False,
+            "use_shm": True,
             "enable_gradient_checkpointing": True,
+            "use_remove_padding": True,
+            "lora_rank": 32,
+            "lora_alpha": 32,
+            "target_modules": "all-linear",
         },
         "rollout": {
-            "tensor_model_parallel_size": 1,
-            "n": 8,
-            "log_prob_micro_batch_size_per_gpu": 2,
-            "multi_turn": {"format": "hermes"},
+            "tensor_model_parallel_size": 2,  # Split across both GPUs
+            "n": 5,
+            "log_prob_micro_batch_size": 116,
             "name": "vllm",
-            "gpu_memory_utilization": 0.45,
-            "max_model_len": 8192,
-            "enforce_eager": True,
-            "free_cache_engine": True,
+            "gpu_memory_utilization": 0.25,
+            "max_num_seqs": 256,  # Reduced for longer sequences
+            "max_model_len": 4096,  # Increased for 6-turn + tool use
+            "max_num_batched_tokens": 4096,
+            "enable_chunked_prefill": False,
+            "load_format": "safetensors",
+            "layered_summon": True,
+            "multi_turn": {"format": "hermes"},
             "engine_kwargs": {
                 "vllm": {
                     "enable_auto_tool_choice": True,
                     "tool_call_parser": "hermes",
-                    "max_num_seqs": 8,
-                    "max_num_batched_tokens": 8192,
-                    "enable_chunked_prefill": False,
                 }
             },
         },
         "actor": {
-            "ppo_mini_batch_size": 16,
-            "ppo_micro_batch_size_per_gpu": 2,
+            "ppo_mini_batch_size": 116,
+            "ppo_micro_batch_size": 116,
+            "ulysses_sequence_parallel_size": 2,
             "grad_clip": 1.0,
-            "clip_ratio": 0.2,
-            "optim": {"lr": 1e-6},
+            "optim": {"lr": 3e-5},
             "use_kl_loss": True,
-            "kl_loss_coef": 0.05,
-            "entropy_coeff": 0.01,
+            "kl_loss_coef": 0.001,
+            "kl_loss_type": "low_var_kl",
+            "entropy_coeff": 0.001,
             "fsdp_config": {
-                "param_offload": False,
-                "optimizer_offload": False,
+                "fsdp_size": -1,
+                "param_offload": True,
+                "optimizer_offload": True,
             },
         },
         "ref": {
-            "log_prob_micro_batch_size_per_gpu": 2,
+            "log_prob_micro_batch_size": 116,
             "fsdp_config": {
-                "param_offload": False,
+                "param_offload": True,
             },
         },
     },
     "trainer": {
-        "n_gpus_per_node": 1,  # Single GPU
+        "n_gpus_per_node": 2,
+        "nnodes": 1,
         "val_before_train": False,
         "critic_warmup": 0,
         "logger": ["console", "wandb"],
         "project_name": "AgentLightning",
-        "experiment_name": "nutrition_14b_grpo_b300",
-        "nnodes": 1,
-        "save_freq": 16,
-        "test_freq": 16,
-        "remove_previous_ckpt_in_save": True,
-        "resume_mode": "auto",
-        "log_val_generations": 5,
+        "experiment_name": "nutrition_14b_multiturn_lora",
+        "save_freq": 20,
+        "test_freq": 10,
         "total_epochs": 5,
     },
 }
