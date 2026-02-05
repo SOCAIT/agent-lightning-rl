@@ -90,11 +90,11 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "total_epochs": 5,
     },
 }
-# Adapted for 6-turn multi-turn with tool use on 2x H100 80GB
+
 RL_TRAINING_CONFIG: Dict[str, Any] = {
     "algorithm": {
         "adv_estimator": "grpo",
-        "use_kl_in_reward": False,  # From reference
+        "use_kl_in_reward": False,
         "kl_ctrl": {
             "kl_coef": 0.001,
         },
@@ -102,10 +102,10 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
     "data": {
         "train_files": "data/fitness_scenarios_train.parquet",
         "val_files": "data/fitness_scenarios_val.parquet",
-        "train_batch_size": 116,  # 58 * 1 * 2 GPUs (adjust nproc_per_gpu as needed)
+        "train_batch_size": 116,
         "val_batch_size": 116,
-        "max_prompt_length": 1024,  # Increased for multi-turn context
-        "max_response_length": 2048,  # Increased for tool use responses
+        "max_prompt_length": 1024,
+        "max_response_length": 2048,
         "filter_overlong_prompts": True,
         "truncation": "error",
         "shuffle": False,
@@ -121,14 +121,14 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             "target_modules": "all-linear",
         },
         "rollout": {
-            "tensor_model_parallel_size": 2,  # Split across both GPUs
-            "n": 5,
-            "log_prob_micro_batch_size": 116,
             "name": "vllm",
+            "tensor_model_parallel_size": 2,
+            "n": 5,
+            "log_prob_micro_batch_size": 116,  # Matches bash: ${mini_batch_size}
             "gpu_memory_utilization": 0.25,
-            "max_num_seqs": 256,  # Reduced for longer sequences
-            "max_model_len": 4096,  # Increased for 6-turn + tool use
-            "max_num_batched_tokens": 4096,
+            "max_num_seqs": 512,  # From bash script
+            "max_model_len": 1536,  # From bash script
+            "max_num_batched_tokens": 1536,  # From bash script
             "enable_chunked_prefill": False,
             "load_format": "safetensors",
             "layered_summon": True,
@@ -141,11 +141,9 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "actor": {
-            
-            "ppo_mini_batch_size": 116,
-         "ppo_micro_batch_size_per_gpu": 58, 
+            "ppo_mini_batch_size": 116,  # ${mini_batch_size}
+            "ppo_micro_batch_size_per_gpu": 116,  # Bash uses ppo_micro_batch_size, not per_gpu
             "ulysses_sequence_parallel_size": 2,
-            "grad_clip": 1.0,
             "optim": {"lr": 3e-5},
             "use_kl_loss": True,
             "kl_loss_coef": 0.001,
@@ -158,7 +156,7 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
             },
         },
         "ref": {
-            "log_prob_micro_batch_size": 116,
+            "log_prob_micro_batch_size": 116,  # ${mini_batch_size}
             "fsdp_config": {
                 "param_offload": True,
             },
