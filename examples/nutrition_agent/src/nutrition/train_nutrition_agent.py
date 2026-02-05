@@ -97,7 +97,10 @@ RL_TRAINING_CONFIG: Dict[str, Any] = {
         "adv_estimator": "grpo",
         "use_kl_in_reward": True,
     },
+    
     "data": {
+         "train_files": "data/fitness_scenarios_train.parquet",
+        "val_files": "data/fitness_scenarios_val.parquet",
         "train_batch_size": 8,       # Balanced for 2 GPUs
         "max_prompt_length": 1024,
         "max_response_length": 1024, 
